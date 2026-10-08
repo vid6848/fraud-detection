@@ -44,3 +44,6 @@ supabase/.branches/
 .vscode/
 .idea/
 *.swp
+
+# --- Local tool config ---
+.mcp.json

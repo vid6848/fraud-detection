@@ -15,7 +15,7 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
 - **Notes:**
   - Using Python 3.13 (3.11 not installed; user chose 3.13).
   - `tests/test_setup.py::test_dataset_exists` will fail in CI where the dataset is absent — handle in Phase 7 (e.g. mark as a data test).
-  - `.mcp.json` (Supabase MCP config, user-added) is intentionally left untracked.
+  - `.mcp.json` (Supabase MCP config, user-added) is gitignored.
 
 > Update this section at the end of every phase.
 
