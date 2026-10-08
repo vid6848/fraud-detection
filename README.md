@@ -54,7 +54,7 @@ flowchart LR
 
 | Layer | Technologies |
 |---|---|
-| Machine learning | Python 3.11, pandas, scikit-learn, XGBoost, imbalanced-learn, SHAP |
+| Machine learning | Python 3.13, pandas, scikit-learn, XGBoost, imbalanced-learn, SHAP |
 | API | FastAPI, pytest |
 | Database & auth | Supabase (Postgres, Realtime, Auth, Row Level Security) |
 | Frontend | React, Vite, TypeScript, Tailwind CSS, Recharts |
@@ -99,7 +99,7 @@ flowchart LR
 *Placeholder — detailed steps will be added as each component is built.*
 
 1. **Clone the repo** and download `creditcard.csv` from Kaggle into `data/`.
-2. **Set up Python:** create a Python 3.11 virtual environment and install `requirements.txt`.
+2. **Set up Python:** create a Python 3.13 virtual environment and install `requirements.txt` (on macOS, XGBoost also needs `brew install libomp`).
 3. **Configure secrets:** copy `.env.example` to `.env` and fill in your Supabase keys.
 4. **Train models:** run the training pipeline in `ml/` → artifacts saved to `ml/artifacts/`.
 5. **Start the API:** run the FastAPI service from `api/`.
@@ -110,7 +110,7 @@ flowchart LR
 
 ## Roadmap
 
-- [ ] Phase 0 — Setup
+- [x] Phase 0 — Setup
 - [ ] Phase 1 — Exploratory data analysis
 - [ ] Phase 2 — Training pipeline & model comparison
 - [ ] Phase 3 — FastAPI service

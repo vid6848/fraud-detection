@@ -1,0 +1,28 @@
+# Python 3.13 — install with: pip install -r requirements.txt
+
+# Data & ML
+pandas==3.0.6
+numpy==2.5.3
+scikit-learn==1.9.1
+xgboost==3.4.1
+imbalanced-learn==0.14.2
+shap==0.52.0
+joblib==1.6.0
+
+# Plotting & notebooks
+matplotlib==3.11.2
+seaborn==0.13.2
+jupyter==1.1.1
+
+# API
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.0
+python-dotenv==1.2.4
+httpx==0.28.1
+
+# Database
+supabase==2.32.0
+
+# Testing
+pytest==9.1.1

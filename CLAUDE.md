@@ -8,10 +8,14 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
 
 ## Current status
 
-- **Phase:** 0 — Setup (not started)
-- **Last completed:** Documentation (CLAUDE.md, README.md)
-- **Next step:** Phase 0 — git init, .gitignore, venv, requirements, folder structure, .env.example
+- **Phase:** 0 — Setup ✅ complete (2026-10-08)
+- **Last completed:** Phase 0 — git + GitHub repo (github.com/vid6848/fraud-detection), Python 3.13 venv, pinned requirements, libomp (for XGBoost), folder structure, .env.example, dataset sanity test (4/4 passing)
+- **Next step:** Phase 1 — EDA notebook in `ml/`
 - **Open questions / blockers:** none
+- **Notes:**
+  - Using Python 3.13 (3.11 not installed; user chose 3.13).
+  - `tests/test_setup.py::test_dataset_exists` will fail in CI where the dataset is absent — handle in Phase 7 (e.g. mark as a data test).
+  - `.mcp.json` (Supabase MCP config, user-added) is intentionally left untracked.
 
 > Update this section at the end of every phase.
 
@@ -44,7 +48,7 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
 
 | Area | Tools |
 |---|---|
-| ML | Python 3.11, pandas, scikit-learn, XGBoost, imbalanced-learn, SHAP |
+| ML | Python 3.13, pandas, scikit-learn, XGBoost, imbalanced-learn, SHAP |
 | API | FastAPI, pytest |
 | Frontend | React, Vite, TypeScript, Tailwind, Recharts |
 | Data / Auth | Supabase (Postgres, Realtime, Auth, Row Level Security) |
@@ -104,11 +108,12 @@ docs/        # extra documentation, screenshots
 ## Phase checklist
 
 ### Phase 0 — Setup
-- [ ] `git init` + `.gitignore` (data/, .env, .venv/, node_modules/, artifacts as appropriate)
-- [ ] Python 3.11 venv in `.venv/`
-- [ ] `requirements.txt` (and dev requirements)
-- [ ] Folder structure created
-- [ ] `.env.example` with all expected variables
+- [x] `git init` + `.gitignore` (data/, .env, .venv/, node_modules/, artifacts as appropriate)
+- [x] Python 3.13 venv in `.venv/`
+- [x] `requirements.txt` with pinned versions (+ `brew install libomp` for XGBoost on macOS)
+- [x] Folder structure created
+- [x] `.env.example` with all expected variables
+- [x] `tests/test_setup.py` — dataset sanity check
 
 ### Phase 1 — EDA
 - [ ] EDA notebook in `ml/` (class balance, Amount/Time distributions, feature correlations, fraud over time)
