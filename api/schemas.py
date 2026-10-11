@@ -3,6 +3,8 @@
 `Transaction` mirrors one row of creditcard.csv minus `Class`. The 28 PCA
 columns are generated from `ml.features.V_COLUMNS` rather than typed out by hand.
 """
+from typing import Literal
+
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
@@ -49,9 +51,48 @@ class ReasonOut(BaseModel):
     message: str = Field(description="Plain-language explanation")
 
 
-class PredictResponse(BaseModel):
+class ScoredTransaction(BaseModel):
     probability: float = Field(ge=0, le=1, description="Calibrated fraud probability")
     risk_level: RiskLevel
     reasons: list[ReasonOut]
+
+
+class PredictResponse(ScoredTransaction):
     model_version: str
-    latency_ms: float = Field(description="Server-side scoring time for this request")
+    latency_ms: float = Field(description="Server-side time to handle this request")
+
+
+def make_batch_request(max_size: int) -> type[BaseModel]:
+    """Batch request schema; the size limit comes from MAX_BATCH_SIZE at app startup."""
+    return create_model(
+        "BatchPredictRequest",
+        transactions=(
+            list[Transaction],
+            Field(min_length=1, max_length=max_size,
+                  description=f"1 to {max_size} transactions, scored in one model call"),
+        ),
+    )
+
+
+class BatchPredictResponse(BaseModel):
+    results: list[ScoredTransaction] = Field(description="One result per input row, same order")
+    count: int
+    model_version: str
+    latency_ms: float = Field(description="Server-side time for the whole batch")
+
+
+class FeatureContribution(BaseModel):
+    feature: str = Field(description="V1-V28, Amount, or time_of_day")
+    value: float = Field(description="Raw input value (hour of day for time_of_day)")
+    shap_value: float = Field(description="Push on the model score; positive = towards fraud")
+    direction: Literal["raises_risk", "lowers_risk"]
+    description: str
+
+
+class ExplainResponse(PredictResponse):
+    model_score: float = Field(
+        description="Uncalibrated forest score that SHAP explains; `probability` is its "
+        "calibrated (monotonic) version, so the ranking of reasons is the same"
+    )
+    base_value: float = Field(description="Average model score SHAP starts from")
+    top_features: list[FeatureContribution]

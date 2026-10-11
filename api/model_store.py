@@ -8,6 +8,8 @@ import joblib
 import ml  # noqa: F401  (model.joblib pickles ml.calibration.CalibratedModel)
 from api.config import Settings
 from ml.config import RAW_COLUMNS
+from ml.explain import make_explainer
+from ml.models import final_estimator
 
 
 class ModelLoadError(RuntimeError):
@@ -19,6 +21,7 @@ class ModelStore:
     model: object
     metadata: dict
     medium_threshold: float
+    explainer: object  # SHAP explainer for model.base, built once
 
     @property
     def version(self) -> str:
@@ -50,7 +53,19 @@ class ModelStore:
                 f"MEDIUM_THRESHOLD={settings.medium_threshold} must be between 0 and the "
                 f"HIGH threshold {metadata['threshold']:.3f}"
             )
-        return cls(model=model, metadata=metadata, medium_threshold=settings.medium_threshold)
+        _use_single_thread(model)
+        # Tree SHAP needs no background data; a linear model would need training rows here.
+        explainer = make_explainer(model.base, train_rows=None)
+        return cls(model=model, metadata=metadata, medium_threshold=settings.medium_threshold,
+                   explainer=explainer)
+
+
+def _use_single_thread(model) -> None:
+    """Score with one thread. For the 1-1000 rows the API sees, starting a thread pool
+    costs more than the trees themselves (1 row: ~15 ms -> ~5 ms). Scores are unchanged."""
+    estimator = final_estimator(model.base)
+    if hasattr(estimator, "n_jobs"):
+        estimator.n_jobs = 1
 
 
 def _read_metadata(path: Path) -> dict:

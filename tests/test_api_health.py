@@ -5,6 +5,8 @@ Uses the real tracked artifacts in ml/artifacts/, so no dataset is needed.
 import json
 import math
 
+import joblib
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -15,6 +17,7 @@ from api.model_store import ModelLoadError, ModelStore
 from api.schemas import EXAMPLE_TRANSACTION, Transaction, to_frame
 from ml.config import ARTIFACTS_DIR, RAW_COLUMNS
 from tests.api_support import make_settings as settings
+from tests.test_api_predict import FRAUD_ROW, MEDIUM_ROW
 
 METADATA = json.loads((ARTIFACTS_DIR / "metadata.json").read_text())
 
@@ -66,6 +69,14 @@ def test_store_thresholds():
     assert store.high_threshold == pytest.approx(METADATA["threshold"])
     assert store.medium_threshold == DEFAULT_MEDIUM_THRESHOLD < store.high_threshold
     assert hasattr(store.model, "predict_proba")
+
+
+def test_store_scores_single_threaded_with_same_results():
+    store = ModelStore.load(settings())
+    assert store.model.base.named_steps["model"].n_jobs == 1
+    X = pd.DataFrame([FRAUD_ROW, MEDIUM_ROW])[RAW_COLUMNS]
+    original = joblib.load(ARTIFACTS_DIR / "model.joblib")  # n_jobs=-1 as saved
+    assert store.model.predict_proba(X) == pytest.approx(original.predict_proba(X))
 
 
 @pytest.mark.parametrize("medium", [0.0, 0.9])

@@ -9,8 +9,17 @@ from fastapi.responses import JSONResponse
 
 from api.config import Settings
 from api.model_store import ModelStore
-from api.schemas import HealthResponse, PredictResponse, Transaction, to_frame
-from api.scoring import score_frame
+from api.explanations import explain_row
+from api.schemas import (
+    BatchPredictResponse,
+    ExplainResponse,
+    HealthResponse,
+    PredictResponse,
+    Transaction,
+    make_batch_request,
+    to_frame,
+)
+from api.scoring import Score, score_frame
 
 logger = logging.getLogger("api")
 
@@ -33,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    BatchPredictRequest = make_batch_request(settings.max_batch_size)
     app.state.store = None
 
     @app.get("/health", response_model=HealthResponse, responses={503: {"model": HealthResponse}})
@@ -55,15 +65,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         start = time.perf_counter()
         store: ModelStore = request.app.state.store
         score = score_frame(store, to_frame([transaction]))[0]
-        return PredictResponse(
-            probability=score.probability,
-            risk_level=score.risk_level,
-            reasons=[asdict(r) for r in score.reasons],
+        return PredictResponse(**_scored(score), model_version=store.version,
+                               latency_ms=_ms_since(start))
+
+    @app.post("/predict/batch", response_model=BatchPredictResponse)
+    def predict_batch(batch: BatchPredictRequest, request: Request):
+        start = time.perf_counter()
+        store: ModelStore = request.app.state.store
+        scores = score_frame(store, to_frame(batch.transactions))  # one model call for all rows
+        return BatchPredictResponse(
+            results=[_scored(s) for s in scores],
+            count=len(scores),
             model_version=store.version,
-            latency_ms=round((time.perf_counter() - start) * 1000, 3),
+            latency_ms=_ms_since(start),
+        )
+
+    @app.post("/explain", response_model=ExplainResponse)
+    def explain(transaction: Transaction, request: Request):
+        start = time.perf_counter()
+        store: ModelStore = request.app.state.store
+        raw = to_frame([transaction])
+        score = score_frame(store, raw)[0]
+        model_score, base_value, contributions = explain_row(store, raw)
+        return ExplainResponse(
+            **_scored(score),
+            model_version=store.version,
+            model_score=model_score,
+            base_value=base_value,
+            top_features=[asdict(c) for c in contributions],
+            latency_ms=_ms_since(start),
         )
 
     return app
+
+
+def _scored(score: Score) -> dict:
+    return {
+        "probability": score.probability,
+        "risk_level": score.risk_level,
+        "reasons": [asdict(r) for r in score.reasons],
+    }
+
+
+def _ms_since(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000, 3)
 
 
 app = create_app()
