@@ -51,3 +51,6 @@ supabase/.branches/
 # --- ML smoke runs (python -m ml.train --quick) ---
 ml/artifacts/quick/
 ml/artifacts/train.log
+
+# Model comparison table is a results artifact, not data
+!ml/artifacts/model_comparison.csv
