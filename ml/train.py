@@ -5,7 +5,8 @@ Steps (validation is used for every choice; the test set is scored exactly once)
  2. Grid over 4 models x 4 imbalance strategies x small hyperparameter grids,
     each fitted on train and scored by validation PR-AUC.
  3. Best config by validation PR-AUC; duplicate-removal sensitivity check.
- 4. Probability calibration (TimeSeriesSplit inside train; sigmoid vs isotonic).
+ 4. Probability calibration: a calibrator fitted on walk-forward out-of-fold
+    train scores, applied on top of the full-train model (sigmoid vs isotonic).
  5. Cost-based threshold (and 90%-precision threshold) on validation.
  6. One evaluation on test, with bootstrap confidence intervals.
  7. Global SHAP check, plots, and artifacts.
@@ -24,11 +25,10 @@ import pandas as pd
 import shap
 import sklearn
 import xgboost
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import brier_score_loss
-from sklearn.model_selection import TimeSeriesSplit
 
 from ml import config, plots
+from ml.calibration import METHODS, CalibratedModel, fit_calibrator, oof_scores
 from ml.eda_utils import load_data
 from ml.explain import (
     make_explainer,
@@ -124,16 +124,19 @@ def compare_models(X_train, y_train, X_val, y_val, grids: dict) -> tuple[pd.Data
     return table, best_per_model
 
 
-def calibrate(model, strategy, params, X_train, y_train, X_val, y_val, folds: int) -> dict:
-    """Fit sigmoid and isotonic calibration on train; keep the lower validation Brier."""
+def calibrate(model, strategy, params, base_pipe, X_train, y_train, X_val, y_val, folds: int) -> dict:
+    """Fit sigmoid and isotonic calibrators on walk-forward out-of-fold train scores.
+
+    Both wrap the same full-train `base_pipe`; keep the lower validation Brier.
+    """
+    start = time.perf_counter()
+    pos, scores = oof_scores(model, strategy, params, X_train, y_train, folds)
+    y_oof = y_train.iloc[pos]
+    log(f"  out-of-fold scores for {len(pos):,} train rows ({folds} walk-forward folds, "
+        f"{time.perf_counter() - start:.1f}s)")
     results = {}
-    for method in ("sigmoid", "isotonic"):
-        start = time.perf_counter()
-        cal = CalibratedClassifierCV(
-            build_pipeline(model, strategy, params, y_train),
-            method=method,
-            cv=TimeSeriesSplit(n_splits=folds),
-        ).fit(X_train, y_train)
+    for method in METHODS:
+        cal = CalibratedModel(base_pipe, fit_calibrator(method, scores, y_oof), method)
         p_val = cal.predict_proba(X_val)[:, 1]
         results[method] = {
             "model": cal,
@@ -141,12 +144,10 @@ def calibrate(model, strategy, params, X_train, y_train, X_val, y_val, folds: in
             "val_brier": float(brier_score_loss(y_val, p_val)),
             "val_pr_auc": pr_auc(y_val, p_val),
         }
-        log(
-            f"  calibration {method:<8}: val Brier {results[method]['val_brier']:.6f}, "
-            f"val PR-AUC {results[method]['val_pr_auc']:.3f} ({time.perf_counter() - start:.1f}s)"
-        )
+        log(f"  calibration {method:<8}: val Brier {results[method]['val_brier']:.6f}, "
+            f"val PR-AUC {results[method]['val_pr_auc']:.3f}")
     best = min(results, key=lambda m: results[m]["val_brier"])
-    return {"method": best, **results[best], "all": results}
+    return {"method": best, **results[best], "all": results, "oof_rows": len(pos)}
 
 
 def _json_default(obj):
@@ -213,12 +214,15 @@ def run(
 
     # 4. Calibration -----------------------------------------------------------
     log(f"\n== 4. Calibration (TimeSeriesSplit({calibration_folds}) inside train) ==")
-    cal = calibrate(best_model, strategy, params, X_train, y_train, X_val, y_val, calibration_folds)
+    cal = calibrate(best_model, strategy, params, base_pipe, X_train, y_train, X_val, y_val,
+                    calibration_folds)
     model, p_val = cal["model"], cal["p_val"]
     p_val_base = best["p_val"]
     calibration = {
         "method": cal["method"],
-        "cv": f"TimeSeriesSplit(n_splits={calibration_folds}) on train",
+        "fitted_on": f"walk-forward out-of-fold scores, TimeSeriesSplit(n_splits={calibration_folds}) "
+                     f"on train ({cal['oof_rows']:,} rows)",
+        "applied_to": "the base model fitted on the full train split",
         "val_brier_uncalibrated": float(brier_score_loss(y_val, p_val_base)),
         "val_brier_calibrated": cal["val_brier"],
         "val_pr_auc_uncalibrated": best["val_pr_auc"],
@@ -252,13 +256,12 @@ def run(
     log(f"  confusion matrix: {test_metrics['confusion_matrix']}")
 
     # 7. SHAP ------------------------------------------------------------------
-    log("\n== 7. SHAP (base model, validation sample) ==")
+    log("\n== 7. SHAP (model.base, validation sample) ==")
     rng = np.random.default_rng(config.RANDOM_SEED)
     normal_idx = np.flatnonzero(y_val.to_numpy() == 0)
     fraud_idx = np.flatnonzero(y_val.to_numpy() == 1)
     pick = np.r_[fraud_idx, rng.choice(normal_idx, min(shap_normal_rows, len(normal_idx)), replace=False)]
-    background = X_train.sample(min(1000, len(X_train)), random_state=config.RANDOM_SEED)
-    explainer = make_explainer(base_pipe, background)
+    explainer = make_explainer(base_pipe, X_train)
     values, Xt = shap_values(explainer, base_pipe, X_val.iloc[pick])
     ranking = shap_ranking(values, FEATURE_COLUMNS)
     top = list(ranking.index[: config.SHAP_TOP_K])
@@ -300,7 +303,6 @@ def run(
 
     # 9. Artifacts -------------------------------------------------------------
     joblib.dump(model, artifacts_dir / "model.joblib")
-    joblib.dump(base_pipe, artifacts_dir / "base_model.joblib")
     pr_points = {
         f"{m}": {
             "label": MODEL_LABELS[m],

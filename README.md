@@ -83,15 +83,15 @@ flowchart LR
 
 ## Results
 
-Full write-up: [`docs/model_results.md`](docs/model_results.md). Every choice (model, imbalance strategy, hyperparameters, calibration, threshold) was made on the validation set. The test set was scored **once**.
+Full write-up: [`docs/model_results.md`](docs/model_results.md). Every choice (model, imbalance strategy, hyperparameters, calibration, threshold) was made on the validation set. The test set was scored **once** per model version (it was re-scored once more after fixing a calibration bug, not to tune anything; see the write-up).
 
-**Final model: Random Forest + class weights, isotonic calibration. Held-out test set** (42,721 transactions, 52 frauds; threshold 0.293, chosen by business cost on validation; 95% bootstrap CIs):
+**Final model: Random Forest + class weights, isotonic calibration. Held-out test set** (42,721 transactions, 52 frauds; threshold 0.429, chosen by business cost on validation; 95% bootstrap CIs):
 
 | PR-AUC | Precision | Recall | F1 | Recall @ 90% precision | Fraud $ caught | Cost saved* |
 |---|---|---|---|---|---|---|
-| **0.750** (0.63–0.86) | **0.696** (0.57–0.81) | **0.750** (0.63–0.86) | **0.722** (0.62–0.81) | **0.673** (0.54–0.83) | **61.5%** (30–93%) | **$3,516** of $6,169 ($1.1k–$7.1k) |
+| **0.744** (0.62–0.86) | **0.812** (0.68–0.91) | **0.750** (0.63–0.86) | **0.780** (0.68–0.86) | **0.712** (0.56–0.84) | **61.5%** (30–93%) | **$3,556** of $6,169 ($1.1k–$7.2k) |
 
-\*Cost = missed fraud dollars + $5 per analyst review, compared with having no model. On test: 56 alerts, 39 real frauds caught, 17 false alarms, 13 frauds missed.
+\*Cost = missed fraud dollars + $5 per analyst review, compared with having no model. On test: 48 alerts, 39 real frauds caught, 9 false alarms, 13 frauds missed.
 
 **Model comparison: validation set** (best imbalance strategy and hyperparameters for each model):
 

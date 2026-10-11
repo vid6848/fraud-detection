@@ -1,9 +1,10 @@
 """SHAP explanations for the fraud model.
 
-SHAP explains the *uncalibrated* base pipeline (fitted on the full training
-split). Calibration is a monotonic squash of its score, so the features that
-push a transaction towards "fraud" are the same; and tree SHAP needs direct
-access to the trees, which the calibration wrapper hides.
+SHAP explains `model.base`, the uncalibrated pipeline fitted on the full
+training split. The served model (`ml.calibration.CalibratedModel`) is exactly
+that pipeline followed by a monotonic score -> probability map, so the features
+that push its score towards "fraud" are the ones SHAP reports. Tree SHAP needs
+direct access to the trees, hence explaining `base` rather than the wrapper.
 """
 from pathlib import Path
 
@@ -19,10 +20,15 @@ from sklearn.linear_model import LogisticRegression  # noqa: E402
 from ml.models import final_estimator, transform_features  # noqa: E402
 
 
-def make_explainer(base_pipe, background: pd.DataFrame):
-    """SHAP explainer for a fitted pipeline. `background` holds raw training rows."""
+def make_explainer(base_pipe, train_rows: pd.DataFrame, background_rows: int = 1000, seed: int = 42):
+    """SHAP explainer for a fitted pipeline.
+
+    `train_rows` holds raw training rows; only the linear explainer needs a background
+    sample from them (tree SHAP uses the trees' own training statistics).
+    """
     model = final_estimator(base_pipe)
     if isinstance(model, LogisticRegression):
+        background = train_rows.sample(min(background_rows, len(train_rows)), random_state=seed)
         return shap.LinearExplainer(model, transform_features(base_pipe, background))
     return shap.TreeExplainer(model)
 

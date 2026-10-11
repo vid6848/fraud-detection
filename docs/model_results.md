@@ -2,7 +2,7 @@
 
 Produced by `python -m ml.train` (about 5–6 minutes on an 8-core laptop). Every number below comes from [`ml/artifacts/metadata.json`](../ml/artifacts/metadata.json) and [`ml/artifacts/model_comparison.csv`](../ml/artifacts/model_comparison.csv).
 
-**Short version:** a **Random Forest with class weights** caught **39 of 52 frauds (75%)** in the held-out test period. **70% of its alerts were real fraud.** It saved an estimated **$3,516 out of $6,169** in fraud losses after paying $5 for each analyst review. The test set has only 52 frauds, so these numbers are uncertain: the 95% interval for recall runs from 63% to 86%.
+**Short version:** a **Random Forest with class weights** caught **39 of 52 frauds (75%)** in the held-out test period. **81% of its alerts were real fraud.** It saved an estimated **$3,556 out of $6,169** in fraud losses after paying $5 for each analyst review. The test set has only 52 frauds, so these numbers are uncertain: the 95% interval for recall runs from 63% to 86%.
 
 ## 1. Setup
 
@@ -14,7 +14,7 @@ Produced by `python -m ml.train` (about 5–6 minutes on an 8-core laptop). Ever
 
 - **The split follows time** (EDA finding 10). The model learns from the past and is scored on the future, as it would be in production.
 - **Features:** V1–V28; `log_amount = log1p(Amount)`; and the hour of day encoded as `hour_sin` and `hour_cos`, so 23:59 sits next to 00:00. Raw `Time` is dropped. A `StandardScaler` sits inside the model pipeline, so it only ever learns from training data.
-- **Every choice was made on validation:** hyperparameters, model, imbalance strategy, calibration method and threshold. The **test set was scored once**, at the very end.
+- **Every choice was made on validation:** hyperparameters, model, imbalance strategy, calibration method and threshold. The **test set was scored once**, at the very end (and once more after the calibration bug fix described in §3).
 
 ## 2. Which model? (validation set)
 
@@ -40,17 +40,24 @@ What this shows:
 
 ## 3. Calibration: making "0.8" mean "80%"
 
-A model's raw score is not automatically a true probability. **Calibration** fixes that, and it matters because the API will turn scores into LOW / MEDIUM / HIGH risk levels. We used `CalibratedClassifierCV` with a 4-fold `TimeSeriesSplit` *inside* the training data (still past → future) and compared two methods.
+A model's raw score is not automatically a true probability. **Calibration** fixes that, and it matters because the API will turn scores into LOW / MEDIUM / HIGH risk levels.
+
+How it works ([`ml/calibration.py`](../ml/calibration.py)):
+1. **Walk forward through the training data** (`TimeSeriesSplit`, 4 folds). Train a forest on the first 20% of the period and score the next 20%, then train on the first 40% and score the next 20%, and so on. Every one of those 159,488 "out-of-fold" scores comes from a model that never saw that row, and only ever looked at the past.
+2. **Learn a score → probability map** from those scores and the true labels. Two methods were compared: sigmoid (a smooth S-curve) and isotonic (a staircase that can take any increasing shape).
+3. **Put that map on top of the forest trained on the full training period.** The deployed model is exactly that forest followed by the map.
 
 | | Brier score (lower is better) | Validation PR-AUC |
 |---|---:|---:|
 | Uncalibrated Random Forest | 0.000335 | 0.880 |
-| Sigmoid (Platt) calibration | 0.000349 | 0.861 |
-| **Isotonic calibration** (kept) | 0.000338 | 0.859 |
+| Sigmoid (Platt) calibration | 0.000320 | 0.880 |
+| **Isotonic calibration** (kept) | **0.000299** | 0.866 |
 
 ![Calibration curve](figures/calibration_curve.png)
 
-**The honest result: calibration did not improve things here.** The class-weighted forest was already about as well calibrated as the calibrated version (Brier 0.000335 vs 0.000338), and PR-AUC fell by about 0.02. The drop happens because the time-series calibration averages 4 forests, each trained on only part of the training period (20%, 40%, 60% and 80% of it). We kept the calibrated model because the project needs a calibration step and the difference is within noise. Still, this is a real finding: **a well-regularised, class-weighted forest may not need calibration**, and this choice is worth revisiting.
+**Calibration helped: isotonic cut the Brier score by about 11%.** Its PR-AUC is a little lower because the staircase gives many transactions exactly the same probability (only 26 distinct values on test), so the model can no longer rank them against each other. Sigmoid keeps the ranking but improves the probabilities less. We follow the rule set in advance (lowest validation Brier), so isotonic is kept.
+
+**A bug fix worth knowing about.** The first version used scikit-learn's `CalibratedClassifierCV` with `TimeSeriesSplit`. That quietly ships an *average of 4 forests*, each trained on only 20–80% of the training period, and not the forest we had selected. It made calibration look harmful (Brier 0.000338, PR-AUC 0.859), and it meant SHAP explained a different model from the one producing scores. The approach above fixes both problems. The test set was scored a second time after this fix. No setting was tuned on test results, but strictly speaking the test set has now been looked at twice.
 
 ## 4. Choosing the alert threshold (validation set)
 
@@ -62,30 +69,30 @@ This is computed for every possible threshold on validation, and the cheapest on
 
 ![Cost vs threshold](figures/cost_vs_threshold.png)
 
-- **Chosen threshold: 0.293.** On validation it raised 61 alerts (47 real frauds) and caught 98% of fraud dollars. It cut cost from $8,398 (no model) to $468.
-- **A high-confidence threshold was also reported: 0.650.** On validation, this is the loosest threshold that still keeps precision at or above 90%. It suits a "block automatically" rule, while 0.293 suits "send to an analyst".
+- **Chosen threshold: 0.429.** On validation it raised 50 alerts (45 real frauds, 90% precision, 80% recall) and caught 98% of fraud dollars. It cut cost from $8,398 (no model) to $416.
+- **The 90%-precision threshold** (the loosest threshold that keeps validation precision at or above 90%) **is also 0.429** this time. Isotonic calibration outputs a staircase, and the cheapest step happens to be the 90%-precision step. In Phase 3, a lower MEDIUM cut point will need to be picked separately.
 - Change `--review-cost` and the threshold moves. Pricier reviews mean fewer, more confident alerts.
 
 ## 5. Final result: test set, evaluated once
 
 | Metric | Value | 95% CI (1,000 bootstrap resamples) |
 |---|---:|---|
-| PR-AUC | **0.750** | 0.633 – 0.857 |
-| Precision (share of alerts that are fraud) | **0.696** | 0.569 – 0.807 |
+| PR-AUC | **0.744** | 0.622 – 0.856 |
+| Precision (share of alerts that are fraud) | **0.812** | 0.684 – 0.911 |
 | Recall (share of frauds caught) | **0.750** | 0.632 – 0.864 |
-| F1 | **0.722** | 0.615 – 0.812 |
-| Recall at 90% precision | **0.673** | 0.537 – 0.833 |
+| F1 | **0.780** | 0.682 – 0.861 |
+| Recall at 90% precision | **0.712** | 0.558 – 0.839 |
 | Fraud dollars caught | **61.5%** | 29.6% – 92.9% |
-| Cost saved vs. no model | **$3,516** of $6,169 | $1,081 – $7,145 |
+| Cost saved vs. no model | **$3,556** of $6,169 | $1,112 – $7,204 |
 
 ![Test confusion matrix](figures/confusion_matrix_test.png)
 ![Test PR curve](figures/pr_curve_test.png)
 
-At threshold 0.293 the model raised **56 alerts on 42,721 transactions**. **39 were fraud and 17 were false alarms.** It missed **13 frauds**. Using the stricter 0.650 threshold instead gives 43 alerts with 88% precision and 73% recall.
+At threshold 0.429 the model raised **48 alerts on 42,721 transactions**. **39 were fraud and 9 were false alarms.** It missed **13 frauds**.
 
-**Why did we catch 75% of frauds but only 62% of fraud dollars?** Four large frauds ($1,097, $634, $358 and $187) make up $2,276 of the $2,372 we missed. The model gave all four a probability below 0.001: to it, they look completely normal. No sensible threshold would have caught them. The other 9 missed frauds are all under $43, including a $0 and a $1 "card testing"-style charge. A tiny-amount rule in the Phase 3 rules layer is aimed at that pattern.
+**Why did we catch 75% of frauds but only 62% of fraud dollars?** Four large frauds ($1,097, $634, $358 and $187) make up $2,276 of the $2,372 we missed. The model gave all four a probability below 0.02: to it, they look almost completely normal. No sensible threshold would have caught them. The other 9 missed frauds are all under $43, including a $0 and a $1 "card testing"-style charge. A tiny-amount rule in the Phase 3 rules layer is aimed at that pattern.
 
-**Why is test lower than validation (PR-AUC 0.75 vs 0.86)?** There are three reasons, all expected:
+**Why is test lower than validation (PR-AUC 0.74 vs 0.87)?** There are three reasons, all expected:
 - Validation was used for tuning, model choice and threshold choice, so its scores are a little optimistic.
 - The test period is later in time. Fraud patterns drift, and the fraud rate is lower (0.12%).
 - With 52 frauds, the test numbers are noisy: each fraud is worth about 2 points of recall.
@@ -94,7 +101,7 @@ This is the honest number to quote.
 
 ## 6. Does the model look at the right things? (SHAP)
 
-SHAP measures how much each feature pushed each prediction towards or away from "fraud". It was computed on a validation sample (all 56 frauds plus 5,000 normal transactions) using the uncalibrated forest. Calibration does not change which features matter.
+SHAP measures how much each feature pushed each prediction towards or away from "fraud". It was computed on a validation sample (all 56 frauds plus 5,000 normal transactions) using `model.base`, the full-train forest inside the deployed model. Calibration is an increasing map applied on top of its score, so the features SHAP reports are the ones driving the served probability.
 
 ![SHAP summary](figures/shap_summary.png)
 ![SHAP importance](figures/shap_importance.png)
@@ -107,15 +114,14 @@ SHAP measures how much each feature pushed each prediction towards or away from 
 
 1. **Validation and test contain no night hours** (EDA finding 10c). They cover only the afternoon and evening of day 2. Fraud spikes at night (EDA finding 5), so performance on night-time traffic is **untested**. The model learned night patterns in training, but we cannot show how well they work.
 2. **Small numbers of fraud:** 56 validation frauds and 52 test frauds. The confidence intervals are wide, and model rankings that differ by about 0.02 PR-AUC are within noise.
-3. **Validation did a lot of work.** It was used for tuning, model choice, calibration choice and threshold choice, so validation scores are optimistic. Only the test numbers are unbiased.
+3. **Validation did a lot of work.** It was used for tuning, model choice, calibration choice and threshold choice, so validation scores are optimistic. The test numbers are the honest ones, with the caveat that the test set was scored twice (before and after the calibration bug fix).
 4. **The cost model is simple.** It assumes a flat $5 per review and that a caught fraud recovers its full amount. $0 frauds add no dollar cost, so the cost-based threshold ignores them.
 5. **The features are anonymised PCA components.** We can say *which* component matters, but not what it means in business terms (merchant, country and so on).
 6. **The data covers only two days, from 2013.** Real fraud patterns change week to week, so a production system would need regular retraining and the drift check planned for Phase 7.
 
 ## Files
 
-- `ml/artifacts/model.joblib`: the calibrated model, which takes raw columns `Time, V1…V28, Amount`.
-- `ml/artifacts/base_model.joblib`: the uncalibrated forest, used for SHAP explanations.
+- `ml/artifacts/model.joblib`: the calibrated model (`ml.calibration.CalibratedModel`), which takes raw columns `Time, V1…V28, Amount`. `model.base` is the forest used for SHAP explanations.
 - `ml/artifacts/metadata.json`: thresholds, all metrics with CIs, the feature list, library versions and the split.
 - `ml/artifacts/model_comparison.csv`: all 48 validation runs.
 - `ml/artifacts/pr_curves.json`: validation PR-curve points for the dashboard.

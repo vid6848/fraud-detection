@@ -11,7 +11,7 @@ from ml.models import QUICK_GRIDS
 from ml.train import run
 from tests.synthetic import make_transactions
 
-ARTIFACT_FILES = ["model.joblib", "base_model.joblib", "metadata.json", "model_comparison.csv", "pr_curves.json"]
+ARTIFACT_FILES = ["model.joblib", "metadata.json", "model_comparison.csv", "pr_curves.json"]
 FIGURE_FILES = [
     "pr_curves_validation.png",
     "pr_curve_test.png",
@@ -84,3 +84,16 @@ def test_real_saved_model_predicts_probabilities():
     proba = model.predict_proba(rows[metadata["input_columns"]])[:, 1]
     assert proba.shape == (500,)
     assert np.all((proba >= 0) & (proba <= 1))
+
+
+def test_saved_model_is_full_train_base_plus_monotonic_calibration(trained):
+    """The served score is model.base's score passed through a monotonic map, so SHAP on
+    model.base explains the served model."""
+    out, df, _ = trained
+    model = joblib.load(out / "artifacts" / "model.joblib")
+    X = df[config.RAW_COLUMNS].head(500)
+    raw = model.base.predict_proba(X)[:, 1]
+    served = model.predict_proba(X)[:, 1]
+    assert np.allclose(served, model.calibrate_scores(raw))
+    order = np.argsort(raw)
+    assert np.all(np.diff(served[order]) >= -1e-12)

@@ -28,7 +28,8 @@ AMOUNT_COLUMN = "Amount"
 # SMOTE / undersampling: resample until fraud is 10% of the normal class.
 RESAMPLE_RATIO = 0.1
 
-# Probability calibration: folds of TimeSeriesSplit inside the training split.
+# Probability calibration: walk-forward TimeSeriesSplit folds inside train give out-of-fold
+# scores for fitting the calibrator (see ml/calibration.py).
 CALIBRATION_FOLDS = 4
 
 # Precision target for the "recall at 90% precision" metric.
