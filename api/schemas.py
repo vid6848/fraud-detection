@@ -6,6 +6,7 @@ columns are generated from `ml.features.V_COLUMNS` rather than typed out by hand
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
+from api.risk import RiskLevel
 from ml.config import RAW_COLUMNS
 from ml.features import V_COLUMNS
 
@@ -41,3 +42,16 @@ class HealthResponse(BaseModel):
     model_version: str | None = None
     model_name: str | None = None
     trained_at: str | None = None
+
+
+class ReasonOut(BaseModel):
+    code: str = Field(description="Machine-readable reason code, e.g. MODEL_HIGH_RISK, TINY_AMOUNT")
+    message: str = Field(description="Plain-language explanation")
+
+
+class PredictResponse(BaseModel):
+    probability: float = Field(ge=0, le=1, description="Calibrated fraud probability")
+    risk_level: RiskLevel
+    reasons: list[ReasonOut]
+    model_version: str
+    latency_ms: float = Field(description="Server-side scoring time for this request")

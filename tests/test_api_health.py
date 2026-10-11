@@ -14,16 +14,9 @@ from api.main import create_app
 from api.model_store import ModelLoadError, ModelStore
 from api.schemas import EXAMPLE_TRANSACTION, Transaction, to_frame
 from ml.config import ARTIFACTS_DIR, RAW_COLUMNS
+from tests.api_support import make_settings as settings
 
 METADATA = json.loads((ARTIFACTS_DIR / "metadata.json").read_text())
-
-
-def settings(**overrides) -> Settings:
-    values = {
-        "model_path": ARTIFACTS_DIR / "model.joblib",
-        "metadata_path": ARTIFACTS_DIR / "metadata.json",
-    }
-    return Settings(**{**values, **overrides})
 
 
 @pytest.fixture(scope="module")

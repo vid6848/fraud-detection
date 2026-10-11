@@ -1,13 +1,16 @@
 """FastAPI app. Run with: uvicorn api.main:app --reload"""
 import logging
+import time
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from api.config import Settings
 from api.model_store import ModelStore
-from api.schemas import HealthResponse
+from api.schemas import HealthResponse, PredictResponse, Transaction, to_frame
+from api.scoring import score_frame
 
 logger = logging.getLogger("api")
 
@@ -45,6 +48,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             model_version=store.version,
             model_name=store.name,
             trained_at=store.trained_at,
+        )
+
+    @app.post("/predict", response_model=PredictResponse)
+    def predict(transaction: Transaction, request: Request):
+        start = time.perf_counter()
+        store: ModelStore = request.app.state.store
+        score = score_frame(store, to_frame([transaction]))[0]
+        return PredictResponse(
+            probability=score.probability,
+            risk_level=score.risk_level,
+            reasons=[asdict(r) for r in score.reasons],
+            model_version=store.version,
+            latency_ms=round((time.perf_counter() - start) * 1000, 3),
         )
 
     return app

@@ -19,9 +19,14 @@ V_COLUMNS = [f"V{i}" for i in range(1, 29)]
 FEATURE_COLUMNS = [*V_COLUMNS, "log_amount", "hour_sin", "hour_cos"]
 
 
+def hour_of_day(time) -> np.ndarray:
+    """Hour of day in [0, 24) from `Time` (seconds since the first transaction, ~midnight)."""
+    return (np.asarray(time, dtype=float) % SECONDS_PER_DAY) / 3600.0
+
+
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     """Turn raw transaction columns (Time, V1-V28, Amount) into model features."""
-    hours = (df["Time"].to_numpy(dtype=float) % SECONDS_PER_DAY) / 3600.0
+    hours = hour_of_day(df["Time"])
     angle = 2 * np.pi * hours / 24.0
     out = df[V_COLUMNS].copy()
     out["log_amount"] = np.log1p(df["Amount"].to_numpy(dtype=float))
