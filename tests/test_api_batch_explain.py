@@ -101,7 +101,7 @@ def test_batch_reports_which_row_is_bad(client):
     rows = [EXAMPLE_TRANSACTION, {**EXAMPLE_TRANSACTION, "Amount": -1}]
     r = client.post("/predict/batch", json={"transactions": rows})
     assert r.status_code == 422
-    assert r.json()["detail"][0]["loc"] == ["body", "transactions", 1, "Amount"]
+    assert r.json()["error"]["details"][0]["loc"] == ["body", "transactions", 1, "Amount"]
 
 
 # --- POST /explain ---

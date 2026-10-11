@@ -96,3 +96,39 @@ class ExplainResponse(PredictResponse):
     )
     base_value: float = Field(description="Average model score SHAP starts from")
     top_features: list[FeatureContribution]
+
+
+class LatencyStats(BaseModel):
+    count: int
+    p50: float | None
+    p95: float | None
+    p99: float | None
+
+
+class Latency(LatencyStats):
+    window: int = Field(description="Percentiles cover at most this many recent requests")
+    by_endpoint: dict[str, LatencyStats]
+
+
+class Counts(BaseModel):
+    total: int
+
+
+class RequestCounts(Counts):
+    by_endpoint: dict[str, int]
+
+
+class ErrorCounts(Counts):
+    by_status: dict[str, int]
+
+
+class MetricsResponse(BaseModel):
+    uptime_seconds: float
+    started_at: str
+    requests: RequestCounts
+    errors: ErrorCounts
+    latency_ms: Latency
+    risk_levels: dict[RiskLevel, int] = Field(
+        description="Scored transactions per level (/predict and /predict/batch)"
+    )
+    scope: str
