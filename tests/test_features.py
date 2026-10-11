@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ml.features import FEATURE_COLUMNS, build_features, make_preprocessor
+from ml.features import FEATURE_COLUMNS, build_features, hour_of_day, make_preprocessor
 from ml.split import time_split
 from tests.synthetic import make_transactions
 
@@ -19,6 +19,12 @@ def test_hour_is_encoded_on_a_circle():
     out = build_features(_rows([0, 6 * 3600, 12 * 3600, 18 * 3600, 86_400, 86_400 + 6 * 3600]))
     assert out["hour_sin"].to_numpy() == pytest.approx([0, 1, 0, -1, 0, 1], abs=1e-12)
     assert out["hour_cos"].to_numpy() == pytest.approx([1, 0, -1, 0, 1, 0], abs=1e-12)
+
+
+def test_hour_of_day_wraps_each_day():
+    assert hour_of_day([0, 3600, 7.5 * 3600, 86_400 + 3600, 172_799]) == pytest.approx(
+        [0, 1, 7.5, 1, 24 - 1 / 3600]
+    )
 
 
 def test_midnight_neighbours_are_close():
