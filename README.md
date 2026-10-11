@@ -83,14 +83,26 @@ flowchart LR
 
 ## Results
 
-*To be filled in after Phase 2 (model training). All numbers are on the held-out, time-based test set.*
+Full write-up: [`docs/model_results.md`](docs/model_results.md). Every choice (model, imbalance strategy, hyperparameters, calibration, threshold) was made on the validation set. The test set was scored **once**.
 
-| Model | Imbalance strategy | PR-AUC | Precision | Recall | F1 | Recall @ 90% precision | Cost saved |
-|---|---|---|---|---|---|---|---|
-| Logistic Regression | TBD | – | – | – | – | – | – |
-| Decision Tree | TBD | – | – | – | – | – | – |
-| Random Forest | TBD | – | – | – | – | – | – |
-| XGBoost | TBD | – | – | – | – | – | – |
+**Final model: Random Forest + class weights, isotonic calibration. Held-out test set** (42,721 transactions, 52 frauds; threshold 0.293, chosen by business cost on validation; 95% bootstrap CIs):
+
+| PR-AUC | Precision | Recall | F1 | Recall @ 90% precision | Fraud $ caught | Cost saved* |
+|---|---|---|---|---|---|---|
+| **0.750** (0.63–0.86) | **0.696** (0.57–0.81) | **0.750** (0.63–0.86) | **0.722** (0.62–0.81) | **0.673** (0.54–0.83) | **61.5%** (30–93%) | **$3,516** of $6,169 ($1.1k–$7.1k) |
+
+\*Cost = missed fraud dollars + $5 per analyst review, compared with having no model. On test: 56 alerts, 39 real frauds caught, 17 false alarms, 13 frauds missed.
+
+**Model comparison: validation set** (best imbalance strategy and hyperparameters for each model):
+
+| Model | Best imbalance strategy | PR-AUC | Recall @ 90% precision |
+|---|---|---|---|
+| **Random Forest** ⭐ | Class weights | **0.880** | 0.80 |
+| XGBoost | None | 0.864 | 0.82 |
+| Logistic Regression | Class weights | 0.815 | 0.66 |
+| Decision Tree | None | 0.778 | 0.71 |
+
+SHAP sanity check passed: V17, V14, V12 and V10, the strongest fraud signals in the EDA, are all among the model's top 10 features. Caveat: the validation and test periods contain no night hours, so night-time performance is untested (see the write-up).
 
 **API latency:** p50 – ms, p95 – ms *(to be measured in Phase 3)*
 
@@ -101,7 +113,7 @@ flowchart LR
 1. **Clone the repo** and download `creditcard.csv` from Kaggle into `data/`.
 2. **Set up Python:** create a Python 3.13 virtual environment and install `requirements.txt` (on macOS, XGBoost also needs `brew install libomp`).
 3. **Configure secrets:** copy `.env.example` to `.env` and fill in your Supabase keys.
-4. **Train models:** run the training pipeline in `ml/` → artifacts saved to `ml/artifacts/`.
+4. **Train models:** `python -m ml.train` (about 6–10 min on a laptop; add `--review-cost 10` to change the cost of one analyst review, or `--quick` for a 1-minute smoke run). It writes the model, threshold and metrics to `ml/artifacts/` and charts to `docs/figures/`. See [`docs/model_results.md`](docs/model_results.md).
 5. **Start the API:** run the FastAPI service from `api/`.
 6. **Apply database migrations:** run the SQL in `supabase/` against your Supabase project.
 7. **Start the dashboard:** install and run the React app in `web/`.
@@ -111,8 +123,8 @@ flowchart LR
 ## Roadmap
 
 - [x] Phase 0 — Setup
-- [ ] Phase 1 — Exploratory data analysis
-- [ ] Phase 2 — Training pipeline & model comparison
+- [x] Phase 1 — Exploratory data analysis
+- [x] Phase 2 — Training pipeline & model comparison
 - [ ] Phase 3 — FastAPI service
 - [ ] Phase 4 — Supabase integration
 - [ ] Phase 5 — Stream simulator

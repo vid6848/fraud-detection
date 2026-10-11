@@ -1,0 +1,322 @@
+{
+  "model_version": "1.0.0",
+  "trained_at": "2026-10-10T11:43:45+00:00",
+  "runtime_seconds": 340.9,
+  "random_seed": 42,
+  "libraries": {
+    "python": "3.13.12",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1",
+    "imbalanced-learn": "0.14.2",
+    "shap": "0.52.0",
+    "pandas": "3.0.6",
+    "numpy": "2.5.3"
+  },
+  "input_columns": [
+    "Time",
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+    "V7",
+    "V8",
+    "V9",
+    "V10",
+    "V11",
+    "V12",
+    "V13",
+    "V14",
+    "V15",
+    "V16",
+    "V17",
+    "V18",
+    "V19",
+    "V20",
+    "V21",
+    "V22",
+    "V23",
+    "V24",
+    "V25",
+    "V26",
+    "V27",
+    "V28",
+    "Amount"
+  ],
+  "features": [
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+    "V7",
+    "V8",
+    "V9",
+    "V10",
+    "V11",
+    "V12",
+    "V13",
+    "V14",
+    "V15",
+    "V16",
+    "V17",
+    "V18",
+    "V19",
+    "V20",
+    "V21",
+    "V22",
+    "V23",
+    "V24",
+    "V25",
+    "V26",
+    "V27",
+    "V28",
+    "log_amount",
+    "hour_sin",
+    "hour_cos"
+  ],
+  "model": {
+    "name": "random_forest",
+    "label": "Random Forest",
+    "imbalance_strategy": "class_weight",
+    "params": {
+      "max_depth": 16
+    },
+    "selected_by": "validation PR-AUC"
+  },
+  "calibration": {
+    "method": "isotonic",
+    "cv": "TimeSeriesSplit(n_splits=4) on train",
+    "val_brier_uncalibrated": 0.0003346160704729948,
+    "val_brier_calibrated": 0.00033816767824260954,
+    "val_pr_auc_uncalibrated": 0.880484118239053,
+    "val_pr_auc_calibrated": 0.8594839968546271,
+    "candidates": {
+      "sigmoid": {
+        "val_brier": 0.00034878349702917934,
+        "val_pr_auc": 0.8608326666176783
+      },
+      "isotonic": {
+        "val_brier": 0.00033816767824260954,
+        "val_pr_auc": 0.8594839968546271
+      }
+    }
+  },
+  "threshold": 0.2928958468228652,
+  "threshold_selection": "minimises validation cost = missed fraud $ + alerts x review cost",
+  "threshold_90_precision": 0.6503851540616247,
+  "review_cost_per_alert": 5.0,
+  "split": {
+    "boundaries": [
+      132929,
+      151329
+    ],
+    "train": {
+      "rows": 199364,
+      "frauds": 384,
+      "fraud_pct": 0.1926,
+      "start_time": 0.0,
+      "end_time": 132928.0
+    },
+    "validation": {
+      "rows": 42722,
+      "frauds": 56,
+      "fraud_pct": 0.1311,
+      "start_time": 132929.0,
+      "end_time": 151328.0
+    },
+    "test": {
+      "rows": 42721,
+      "frauds": 52,
+      "fraud_pct": 0.1217,
+      "start_time": 151329.0,
+      "end_time": 172792.0
+    }
+  },
+  "validation_metrics": {
+    "pr_auc": 0.8594839968546271,
+    "recall_at_90_precision": 0.7678571428571429,
+    "threshold": 0.2928958468228652,
+    "precision": 0.7704918032786885,
+    "recall": 0.8392857142857143,
+    "f1": 0.8034188034188035,
+    "alerts": 61,
+    "confusion_matrix": {
+      "tn": 42652,
+      "fp": 14,
+      "fn": 9,
+      "tp": 47
+    },
+    "total_fraud_amount": 8397.699999999999,
+    "fraud_amount_caught": 8234.390000000001,
+    "fraud_amount_missed": 163.30999999999767,
+    "pct_fraud_dollars_caught": 98.05530085618685,
+    "review_cost_total": 305.0,
+    "cost_no_model": 8397.699999999999,
+    "cost_with_model": 468.3099999999977,
+    "cost_saved": 7929.390000000001
+  },
+  "test_metrics": {
+    "pr_auc": 0.7497782187760992,
+    "recall_at_90_precision": 0.6730769230769231,
+    "threshold": 0.2928958468228652,
+    "precision": 0.6964285714285714,
+    "recall": 0.75,
+    "f1": 0.7222222222222223,
+    "alerts": 56,
+    "confusion_matrix": {
+      "tn": 42652,
+      "fp": 17,
+      "fn": 13,
+      "tp": 39
+    },
+    "total_fraud_amount": 6168.880000000001,
+    "fraud_amount_caught": 3796.48,
+    "fraud_amount_missed": 2372.400000000001,
+    "pct_fraud_dollars_caught": 61.542451790276345,
+    "review_cost_total": 280.0,
+    "cost_no_model": 6168.880000000001,
+    "cost_with_model": 2652.400000000001,
+    "cost_saved": 3516.48,
+    "at_90_precision_threshold": {
+      "threshold": 0.6503851540616247,
+      "precision": 0.8837209302325582,
+      "recall": 0.7307692307692307,
+      "f1": 0.8,
+      "alerts": 43,
+      "confusion_matrix": {
+        "tn": 42664,
+        "fp": 5,
+        "fn": 14,
+        "tp": 38
+      }
+    },
+    "ci95": {
+      "pr_auc": {
+        "low": 0.6331875764065273,
+        "high": 0.85660849005496
+      },
+      "precision": {
+        "low": 0.5686163101604278,
+        "high": 0.8070344129554655
+      },
+      "recall": {
+        "low": 0.6315302144249513,
+        "high": 0.8636800699300698
+      },
+      "f1": {
+        "low": 0.6153061224489796,
+        "high": 0.811909361667874
+      },
+      "recall_at_90_precision": {
+        "low": 0.5369832041343671,
+        "high": 0.8334090909090909
+      },
+      "pct_fraud_dollars_caught": {
+        "low": 29.63222221509707,
+        "high": 92.91457561830995
+      },
+      "cost_saved": {
+        "low": 1080.81,
+        "high": 7144.8682499999995
+      }
+    },
+    "n_bootstrap": 1000
+  },
+  "model_comparison_best_per_model": {
+    "logistic_regression": {
+      "strategy": "class_weight",
+      "params": {
+        "C": 1.0
+      },
+      "val_pr_auc": 0.8152917361683519
+    },
+    "decision_tree": {
+      "strategy": "none",
+      "params": {
+        "max_depth": 4
+      },
+      "val_pr_auc": 0.7780523078046372
+    },
+    "random_forest": {
+      "strategy": "class_weight",
+      "params": {
+        "max_depth": 16
+      },
+      "val_pr_auc": 0.880484118239053
+    },
+    "xgboost": {
+      "strategy": "none",
+      "params": {
+        "max_depth": 3,
+        "learning_rate": 0.05
+      },
+      "val_pr_auc": 0.8641971510001647
+    }
+  },
+  "shap": {
+    "top_features": [
+      {
+        "feature": "V12",
+        "mean_abs_shap": 0.08325997012677397
+      },
+      {
+        "feature": "V14",
+        "mean_abs_shap": 0.06691287675915117
+      },
+      {
+        "feature": "V4",
+        "mean_abs_shap": 0.059366161273436795
+      },
+      {
+        "feature": "V10",
+        "mean_abs_shap": 0.050282214965923465
+      },
+      {
+        "feature": "V11",
+        "mean_abs_shap": 0.05000847699846966
+      },
+      {
+        "feature": "V17",
+        "mean_abs_shap": 0.04374909244809887
+      },
+      {
+        "feature": "V16",
+        "mean_abs_shap": 0.023983416210766075
+      },
+      {
+        "feature": "V3",
+        "mean_abs_shap": 0.01756638782009118
+      },
+      {
+        "feature": "V7",
+        "mean_abs_shap": 0.01595166643156544
+      },
+      {
+        "feature": "V1",
+        "mean_abs_shap": 0.010629713064436505
+      }
+    ],
+    "expected": [
+      "V17",
+      "V14",
+      "V12",
+      "V10"
+    ],
+    "expected_in_top_k": {
+      "V17": true,
+      "V14": true,
+      "V12": true,
+      "V10": true
+    },
+    "all_expected_in_top_k": true,
+    "k": 10
+  },
+  "duplicate_check": {
+    "train_rows_removed": 716,
+    "val_pr_auc_with_duplicates": 0.880484118239053,
+    "val_pr_auc_without_duplicates": 0.8741053971048077
+  }
+}
