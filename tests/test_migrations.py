@@ -62,3 +62,9 @@ def test_no_secrets_in_migrations(path):
     text = path.read_text()
     assert not re.search(r"eyJ[A-Za-z0-9_-]{10,}", text), "JWT-looking string in migration"
     assert not re.search(r"sb_secret_\w+", text), "Supabase secret key in migration"
+
+
+def test_realtime_on_transactions_and_alerts():
+    published = re.findall(r"alter publication supabase_realtime add table ([^;]+);", _all_sql())
+    tables = {t.strip().removeprefix("public.") for group in published for t in group.split(",")}
+    assert tables == {"transactions", "alerts"}
