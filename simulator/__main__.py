@@ -79,7 +79,7 @@ async def simulate(stream: Stream, config: Config, run_id: str, stats: RunStats,
         try:
             loop.add_signal_handler(sig, stop.set)
             handled.append(sig)
-        except (NotImplementedError, RuntimeError):  # e.g. Windows, or not the main thread
+        except (NotImplementedError, RuntimeError, ValueError):  # Windows / not main thread
             pass
     done = asyncio.Event()
     view = asyncio.create_task(LiveView(stats, time.monotonic).run(done)) if live else None

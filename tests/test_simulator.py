@@ -6,11 +6,12 @@ moves the clock forward, so pacing can be checked exactly and instantly.
 import asyncio
 import io
 import json
+import sys
 
 import httpx
 import pytest
 
-from ml.config import RAW_COLUMNS, SPLIT_BOUNDARIES, TARGET
+from ml.config import RAW_COLUMNS, ROOT, SPLIT_BOUNDARIES, TARGET
 from simulator import __main__ as cli
 from simulator.client import ApiUnavailable, Result
 from simulator.display import LiveView, render, render_summary
@@ -609,3 +610,48 @@ def test_batch_with_wrong_number_of_results_is_an_error():
     results = run_sync(load_stream(DF, limit=3), Config(batch_size=3), "r",
                        transport=httpx.MockTransport(handler))
     assert [r.error for r in results] == ["bad_response"] * 3
+
+
+
+# --- remaining paths -----------------------------------------------------------
+
+def test_simulate_with_live_view_and_without_signal_support(monkeypatch, capsys):
+    """Live view on (non-TTY output), and a loop that can't hook signals (e.g. Windows)."""
+    def no_signals(self, sig, callback):
+        raise NotImplementedError
+
+    monkeypatch.setattr(asyncio.AbstractEventLoop, "add_signal_handler", no_signals)
+    monkeypatch.setattr(type(asyncio.new_event_loop()), "add_signal_handler", no_signals)
+    real_run = cli.run
+    api = FakeApi()
+
+    async def run_with_fake_api(stream, config, run_id, **kwargs):
+        return await real_run(stream, config, run_id, transport=api.transport, **kwargs)
+
+    monkeypatch.setattr(cli, "run", run_with_fake_api)
+    stream = load_stream(DF, limit=5)
+    stats = RunStats(stream.labels)
+    outcome = asyncio.run(cli.simulate(stream, Config(rate=1000), "r", stats, live=True))
+    assert outcome.stopped_reason == "completed" and stats.sent == 5
+    assert "sent 5/5" in capsys.readouterr().out  # final live frame
+
+
+def test_result_without_server_latency():
+    stats = RunStats([0])
+    stats.record([Result(0, "sim-r-0", ok=True, status=200, latency_ms=4.0, risk_level="LOW")])
+    assert stats.server_latencies == [] and stats.latencies == [4.0]
+
+
+def test_report_path_outside_the_repo_is_shown_in_full(tmp_path):
+    assert cli._relative(tmp_path / "x.json") == str(tmp_path / "x.json")
+    assert cli._relative(cli.REPORT_DIR / "x.json") == "simulator/reports/x.json"
+
+
+def test_module_entry_point_help():
+    import subprocess
+
+    out = subprocess.run([sys.executable, "-m", "simulator", "--help"], cwd=ROOT,
+                         capture_output=True, text=True, check=True).stdout
+    for option in ("--rate", "--limit", "--api-url", "--mode", "--speed", "--batch",
+                   "--retries", "--max-error-rate"):
+        assert option in out

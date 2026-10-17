@@ -71,12 +71,12 @@ def render_summary(report: dict, path: str | None) -> list[str]:
 
 
 class LiveView:
-    def __init__(self, stats: RunStats, clock, out: TextIO = sys.stdout,
+    def __init__(self, stats: RunStats, clock, out: TextIO | None = None,
                  interval_s: float = 0.5, plain_every_s: float = 5.0):
         self.stats = stats
         self.clock = clock
-        self.out = out
-        self.tty = out.isatty()
+        self.out = out or sys.stdout  # looked up now, so a redirected stdout is honoured
+        self.tty = self.out.isatty()
         self.interval_s = interval_s if self.tty else plain_every_s
         self._start = clock()
         self._drawn = 0
