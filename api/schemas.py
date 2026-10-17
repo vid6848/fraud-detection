@@ -3,7 +3,9 @@
 `Transaction` mirrors one row of creditcard.csv minus `Class`. The 28 PCA
 columns are generated from `ml.features.V_COLUMNS` rather than typed out by hand.
 """
+from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -57,7 +59,14 @@ class ScoredTransaction(BaseModel):
     reasons: list[ReasonOut]
 
 
-class PredictResponse(ScoredTransaction):
+class StoredScore(ScoredTransaction):
+    transaction_id: UUID | None = Field(
+        description="Id the transaction is saved under (use with GET /explain/{id}); "
+        "saved in the background just after the response. null when storage is off"
+    )
+
+
+class PredictResponse(StoredScore):
     model_version: str
     latency_ms: float = Field(description="Server-side time to handle this request")
 
@@ -75,7 +84,7 @@ def make_batch_request(max_size: int) -> type[BaseModel]:
 
 
 class BatchPredictResponse(BaseModel):
-    results: list[ScoredTransaction] = Field(description="One result per input row, same order")
+    results: list[StoredScore] = Field(description="One result per input row, same order")
     count: int
     model_version: str
     latency_ms: float = Field(description="Server-side time for the whole batch")
@@ -89,13 +98,24 @@ class FeatureContribution(BaseModel):
     description: str
 
 
-class ExplainResponse(PredictResponse):
+class ExplainResponse(ScoredTransaction):
+    model_version: str
+    latency_ms: float = Field(description="Server-side time to handle this request")
     model_score: float = Field(
         description="Uncalibrated forest score that SHAP explains; `probability` is its "
         "calibrated (monotonic) version, so the ranking of reasons is the same"
     )
     base_value: float = Field(description="Average model score SHAP starts from")
     top_features: list[FeatureContribution]
+
+
+class StoredExplainResponse(ExplainResponse):
+    transaction_id: UUID
+    created_at: datetime = Field(description="When the transaction was scored and stored")
+    stored_probability: float = Field(description="Probability saved when it was first scored")
+    stored_model_version: str = Field(
+        description="Model that first scored it; `probability` above is from the current model"
+    )
 
 
 class LatencyStats(BaseModel):
@@ -122,6 +142,14 @@ class ErrorCounts(Counts):
     by_status: dict[str, int]
 
 
+class StorageCounts(BaseModel):
+    enabled: bool = Field(description="False when Supabase settings are missing")
+    writes_ok: int = Field(description="Successful background inserts (one per request)")
+    writes_failed: int = Field(description="Failed inserts; scoring still succeeded")
+    rows_written: int
+    rows_failed: int
+
+
 class MetricsResponse(BaseModel):
     uptime_seconds: float
     started_at: str
@@ -131,4 +159,5 @@ class MetricsResponse(BaseModel):
     risk_levels: dict[RiskLevel, int] = Field(
         description="Scored transactions per level (/predict and /predict/batch)"
     )
+    storage: StorageCounts
     scope: str

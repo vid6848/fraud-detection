@@ -12,7 +12,7 @@ LOGGER_NAME = "api"
 LOG_FIELDS = (
     "request_id", "method", "endpoint", "path", "status", "latency_ms",
     "risk_level", "risk_levels", "batch_size", "error_code", "error_fields",
-    "model_version", "model_path",
+    "model_version", "model_path", "rows", "error_type", "storage_error_code",
 )
 
 

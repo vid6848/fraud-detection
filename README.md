@@ -16,7 +16,8 @@ An end-to-end fraud detection system: machine-learning models trained on 284,807
 - Per-transaction SHAP explanations
 
 **API**
-- FastAPI endpoints: `/predict`, `/predict/batch`, `/explain`, `/health`, `/metrics` (p50/p95/p99 latency); `/explain/{id}` arrives with Supabase in Phase 4
+- FastAPI endpoints: `/predict`, `/predict/batch`, `/explain`, `/explain/{id}` (stored transactions, analysts only), `/health`, `/metrics` (p50/p95/p99 latency)
+- Every scored transaction saved to Supabase in a background task (scoring keeps working if the database is down)
 - Hybrid scoring: ML model + a small rules layer
 - LOW / MEDIUM / HIGH risk levels; HIGH risk automatically raises an alert
 
@@ -118,7 +119,7 @@ uvicorn api.main:app --no-access-log          # add --reload while developing
 # interactive docs: http://localhost:8000/docs
 ```
 
-`--no-access-log` turns off uvicorn's plain-text access lines; the API writes its own structured JSON line for every request (see [Logging](#logging)). Settings come from `.env` (see `.env.example`): `MODEL_PATH`, `METADATA_PATH`, `MEDIUM_THRESHOLD` (default 0.05), `MAX_BATCH_SIZE` (default 1000), `LOG_LEVEL`.
+`--no-access-log` turns off uvicorn's plain-text access lines; the API writes its own structured JSON line for every request (see [Logging](#logging)). Settings come from `.env` (see `.env.example`): `MODEL_PATH`, `METADATA_PATH`, `MEDIUM_THRESHOLD` (default 0.05), `MAX_BATCH_SIZE` (default 1000), `LOG_LEVEL`, and for storage `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `STORAGE_TIMEOUT_S` (default 5).
 
 | Method | Path | What it does |
 |---|---|---|
@@ -126,6 +127,7 @@ uvicorn api.main:app --no-access-log          # add --reload while developing
 | POST | `/predict` | Score one transaction: probability, risk level, reasons |
 | POST | `/predict/batch` | Score 1–1,000 transactions in one vectorized model call |
 | POST | `/explain` | Score + top 5 SHAP feature contributions in plain words |
+| GET | `/explain/{id}` | Same explanation for a **stored** transaction; needs an analyst login token |
 | GET | `/metrics` | Request counts, p50/p95/p99 latency, errors, risk-level counts, uptime |
 
 A transaction is one row of `creditcard.csv` without `Class`: `Time`, `V1`–`V28`, `Amount` (all numbers; `Time` and `Amount` ≥ 0; unknown fields are rejected). The examples below use [`docs/examples/transaction.json`](docs/examples/transaction.json), a real fraud from the validation period.
@@ -149,6 +151,15 @@ A transaction is one row of `creditcard.csv` without `Class`: `Time`, `V1`–`V2
 | `RULES_ESCALATED` | both of the above on a LOW transaction | raises it to MEDIUM |
 
 Model reasons are `MODEL_HIGH_RISK` and `MODEL_MEDIUM_RISK`. On the validation set: LOW 42,654 (7 frauds), MEDIUM 18 (4), HIGH 50 (45). Honest caveats: the model already sees amount and hour, so the rules mostly explain rather than add signal; and validation/test contain no night hours, so on validation `NIGHT_HOURS` never fires. On the training period (which has nights) the escalation rule would add about 0.6% of traffic to MEDIUM at a 0.95% fraud rate.
+
+### Storage
+
+With the three `SUPABASE_*` variables set, every transaction scored by `/predict` and `/predict/batch` is saved to the `transactions` table (see [Database](#database)), and MEDIUM/HIGH ones get an alert:
+
+- **After the response, not before.** The API gives each row a `transaction_id` (UUID) and returns it straight away; a FastAPI background task inserts the rows once the response has been sent (one insert per request, so a 1,000-row batch is one call).
+- **Failures never fail scoring.** If Supabase is down or slow (timeout `STORAGE_TIMEOUT_S`), the client still gets its score; the API logs `storage write failed` (error type and code only, never row values) and counts it in `/metrics` → `storage`.
+- **Keys stay on the server.** Writes use the service role key, which bypasses Row Level Security. It is read from `.env` only, never logged (it's even hidden from `repr(Settings)`), and must never reach the dashboard.
+- Without the variables, storage is off: scoring works the same, `transaction_id` is `null`, and `GET /explain/{id}` answers 503.
 
 ### Endpoints
 
@@ -178,6 +189,7 @@ curl -X POST localhost:8000/predict \
     {"code": "MODEL_HIGH_RISK",
      "message": "Model fraud probability 0.926 is at or above the HIGH threshold 0.429"}
   ],
+  "transaction_id": "5b0c6f1e-2f43-4f7e-9a51-0c8d7f2e9b14",
   "model_version": "1.0.0",
   "latency_ms": 5.893
 }
@@ -195,8 +207,10 @@ curl -X POST localhost:8000/predict/batch \
 {
   "results": [
     {"probability": 0.9257142857142857, "risk_level": "HIGH",
-     "reasons": [{"code": "MODEL_HIGH_RISK", "message": "Model fraud probability 0.926 is at or above the HIGH threshold 0.429"}]},
-    {"probability": 0.00013366799839598402, "risk_level": "LOW", "reasons": []}
+     "reasons": [{"code": "MODEL_HIGH_RISK", "message": "Model fraud probability 0.926 is at or above the HIGH threshold 0.429"}],
+     "transaction_id": "0f4b8a52-91d6-4c1e-8a0e-6c2f5d9b7a31"},
+    {"probability": 0.00013366799839598402, "risk_level": "LOW", "reasons": [],
+     "transaction_id": "c3e1d7a4-5b2f-4e8c-9d06-1a7b3f5e2c90"}
   ],
   "count": 2,
   "model_version": "1.0.0",
@@ -236,6 +250,14 @@ curl -X POST localhost:8000/explain \
 ```
 SHAP explains `model_score`, the forest's uncalibrated score (`base_value` + all SHAP values = `model_score`). `probability` is a monotonic calibration of that score, so the features that push one up push the other up too. shap_values are rounded here for readability.
 
+**`GET /explain/{id}`**: the `/explain` response for a transaction saved earlier, plus `transaction_id`, `created_at`, `stored_probability` and `stored_model_version` (what it scored when it arrived; `probability` is recomputed with the current model). Only for logged-in analysts: send the Supabase access token of an analyst session. The API reads the row **with that token** (anon key + user JWT), so Row Level Security decides, exactly as for the dashboard.
+
+```bash
+curl localhost:8000/explain/5b0c6f1e-2f43-4f7e-9a51-0c8d7f2e9b14 \
+  -H "Authorization: Bearer $ANALYST_ACCESS_TOKEN"
+```
+No token or an invalid/expired one → 401; unknown id (or one RLS hides) → 404; storage off or unreachable → 503; not a UUID → 422.
+
 **`GET /metrics`**
 
 ```bash
@@ -251,10 +273,11 @@ curl localhost:8000/metrics
   "latency_ms": {"count": 8, "p50": 4.077, "p95": 18.082, "p99": 20.464, "window": 10000,
                  "by_endpoint": {"POST /predict": {"count": 3, "p50": 7.155, "p95": 19.669, "p99": 20.781}, "...": {}}},
   "risk_levels": {"LOW": 1, "MEDIUM": 0, "HIGH": 3},
+  "storage": {"enabled": true, "writes_ok": 4, "writes_failed": 0, "rows_written": 5, "rows_failed": 0},
   "scope": "in-memory, per worker process, reset on restart"
 }
 ```
-Latency percentiles cover the most recent 10,000 requests. `risk_levels` counts transactions scored by `/predict` and `/predict/batch` (not `/explain`). These numbers live in memory: they reset on restart, and each uvicorn worker reports its own.
+Latency percentiles cover the most recent 10,000 requests. `risk_levels` counts transactions scored by `/predict` and `/predict/batch` (not `/explain` or `/explain/{id}`). `storage` counts background inserts (one per request) and the rows in them; a non-zero `writes_failed` means scored transactions were not saved. These numbers live in memory: they reset on restart, and each uvicorn worker reports its own.
 
 ### Errors
 
@@ -271,9 +294,10 @@ Every error has the same shape, and `request_id` matches the `X-Request-ID` resp
 | Status | `code` | When |
 |---|---|---|
 | 422 | `validation_error` | Missing/extra field, wrong type, negative amount, NaN, malformed JSON, batch empty or over 1,000. `details` names each bad field but never echoes the submitted values. |
-| 404 | `not_found` | Unknown path |
+| 401 | `unauthorized` | `GET /explain/{id}` without a valid analyst token |
+| 404 | `not_found` | Unknown path, or a stored transaction that doesn't exist |
 | 405 | `method_not_allowed` | e.g. `GET /predict` |
-| 503 | `service_unavailable` | Model not loaded yet |
+| 503 | `service_unavailable` | Model not loaded yet, or (for `GET /explain/{id}`) storage off or unreachable |
 | 500 | `internal_error` | Unexpected bug: the client only gets "Internal server error"; the stack trace goes to the server log under the same request ID |
 
 ### Logging
@@ -304,7 +328,100 @@ Apple M2, Python 3.13, localhost, single uvicorn worker:
 | `/predict/batch`, 1,000 rows, round-trip | 33.7 ms | 34.3 ms | 34.4 ms | ~29,700 rows/s |
 | `/predict/batch`, 1,000 rows, server-side | 15.7 ms | 16.1 ms | 16.1 ms | |
 
+**With Supabase storage on** (same machine, same day, 5 batch runs; storage off measured alongside for a fair comparison):
+
+| p50, round-trip | storage off | storage on |
+|---|---|---|
+| `/predict` | 6.6 ms | 8.7 ms |
+| `/predict/batch`, 1,000 rows | 33.7 ms | 48.8 ms |
+
+The ~100 ms network insert never sits in front of a response (otherwise `/predict` would be ~100 ms). The extra 2 ms comes from the previous request's background task (building and JSON-encoding the rows) sharing the CPU with the next request; for batches that's 1,000 rows of JSON. All 7,020 benchmark rows were written with no failures (and deleted afterwards).
+
 `/explain` adds about 6 ms of SHAP on top of scoring (p50 11.6 ms server-side). Most of the gap between server-side and round-trip on the batch is parsing and validating 1,000 JSON rows. One design choice behind these numbers: the forest was saved with `n_jobs=-1`, and starting a thread pool for a single row cost ~10 ms, so the API scores with one thread (same predictions, `/predict` went from 15 ms to 6 ms).
+
+## Database
+
+Supabase (Postgres) stores every scored transaction, the alert queue, analyst feedback and model versions. The schema lives in [`supabase/migrations/`](supabase/migrations/) as plain SQL, applied in filename order.
+
+```mermaid
+erDiagram
+    transactions ||--o| alerts : "MEDIUM/HIGH creates"
+    alerts ||--o{ feedback : "reviewed in"
+    auth_users ||--o{ feedback : "writes"
+    auth_users ||--o{ alerts : "reviews"
+
+    transactions {
+        uuid id PK "generated by the API"
+        timestamptz created_at
+        float8 time_seconds "raw Time, to re-score"
+        numeric amount
+        smallint hour_of_day
+        jsonb features "V1-V28"
+        float8 probability
+        text risk_level "LOW / MEDIUM / HIGH"
+        jsonb reasons
+        text model_version
+        real latency_ms
+    }
+    alerts {
+        bigint id PK
+        uuid transaction_id FK "unique"
+        text severity "HIGH / MEDIUM"
+        text status "open / confirmed_fraud / false_alarm"
+        uuid reviewed_by FK "set by trigger"
+        timestamptz reviewed_at "set by trigger"
+        timestamptz created_at
+    }
+    feedback {
+        bigint id PK
+        bigint alert_id FK
+        text label "confirmed_fraud / false_alarm"
+        text note
+        uuid analyst FK "defaults to the logged-in user"
+        timestamptz created_at
+    }
+    model_runs {
+        bigint id PK
+        text version "unique"
+        jsonb metrics "from metadata.json"
+        timestamptz trained_at
+        timestamptz created_at
+    }
+    auth_users {
+        uuid id PK "Supabase Auth"
+        text email
+    }
+```
+
+**Logic in the database, not the API:**
+- **Alerts:** a trigger on `transactions` inserts an alert for every MEDIUM or HIGH row in the same database transaction, so a risky transaction can never be stored without its alert (and the API makes one insert per request).
+- **Review stamp:** when an analyst changes `alerts.status`, a trigger sets `reviewed_by` to their user id and `reviewed_at` to now, so neither can be faked.
+- **Indexes:** for the live feed (`transactions.created_at`), risk filters (`risk_level, created_at`), the review queue (`alerts.status, created_at`), and every foreign key.
+- **Realtime:** inserts and updates on `transactions` and `alerts` stream to the dashboard. Realtime applies the same RLS rules, so only logged-in analysts receive events.
+
+### Row Level Security
+
+RLS is on for all four tables. Access is set in two layers: grants decide which actions a role may try at all (down to single columns), and policies decide which rows those actions may touch.
+
+| Who | `transactions` | `alerts` | `feedback` | `model_runs` |
+|---|---|---|---|---|
+| **anon** (not logged in) | nothing | nothing | nothing | nothing |
+| **authenticated** (analyst) | read | read; update `status` only | read; insert as themselves | read |
+| **service_role** (API, scripts) | insert, read | (via trigger) | — | upsert |
+
+- The **service role key bypasses RLS**, so it's server-side only: the API and `scripts/` read it from `.env`. It is never committed or logged, and must never be used in `web/` (the dashboard uses the anon key plus the analyst's login).
+- An **analyst** is any logged-in user. Public sign-ups are turned off, so only accounts created in the dashboard can log in.
+- **Proof:** [`supabase/tests/rls_checks.sql`](supabase/tests/rls_checks.sql) tries every allowed and forbidden action as `anon` and as an analyst inside one rolled-back transaction, and fails loudly on any breach. [`tests/test_rls_integration.py`](tests/test_rls_integration.py) checks the same rules over HTTP with the real anon key and demo analyst login.
+
+### Set up your own project
+
+1. **Create a Supabase project** and copy the project URL, anon key and service role key (Project Settings → API) into `.env` (see `.env.example`).
+2. **Apply the migrations** in [`supabase/migrations/`](supabase/migrations/) in filename order: paste each one into the SQL editor, or run `supabase db push` with the Supabase CLI.
+3. **Check RLS:** run [`supabase/tests/rls_checks.sql`](supabase/tests/rls_checks.sql) in the SQL editor. It should print `ALL RLS CHECKS PASSED` and leave nothing behind.
+4. **Auth:** Authentication → Sign In / Providers → Email: keep Email enabled and turn off "Allow new users to sign up". Then Authentication → Users → Add user → Create new user (tick "Auto Confirm User") for each analyst. Put a demo analyst's email and password in `.env` as `DEMO_ANALYST_EMAIL` / `DEMO_ANALYST_PASSWORD` for the integration tests.
+5. **Load the model's results:** `python scripts/load_model_runs.py` (safe to re-run; it updates the row for the same version).
+6. **Start the API** and score something: the transaction appears in `transactions`, and an alert appears in `alerts` if it's MEDIUM/HIGH.
+7. **Run the integration tests:** `pytest -m integration`. They're skipped automatically when credentials are missing, and clean up the rows they create.
 
 ## How to run
 
@@ -315,7 +432,7 @@ Apple M2, Python 3.13, localhost, single uvicorn worker:
 3. **Configure secrets:** copy `.env.example` to `.env` and fill in your Supabase keys.
 4. **Train models:** `python -m ml.train` (about 6–10 min on a laptop; add `--review-cost 10` to change the cost of one analyst review, or `--quick` for a 1-minute smoke run). It writes the model, threshold and metrics to `ml/artifacts/` and charts to `docs/figures/`. See [`docs/model_results.md`](docs/model_results.md).
 5. **Start the API:** `uvicorn api.main:app --no-access-log` (see [API](#api)).
-6. **Apply database migrations:** run the SQL in `supabase/` against your Supabase project.
+6. **Set up the database:** apply `supabase/migrations/`, create an analyst and load the model results (see [Database → Set up your own project](#set-up-your-own-project)).
 7. **Start the dashboard:** install and run the React app in `web/`.
 8. **Start the stream:** run the simulator to replay transactions at e.g. 20/sec.
 9. **Or run everything with Docker Compose** *(Phase 7)*.
@@ -326,7 +443,7 @@ Apple M2, Python 3.13, localhost, single uvicorn worker:
 - [x] Phase 1 — Exploratory data analysis
 - [x] Phase 2 — Training pipeline & model comparison
 - [x] Phase 3 — FastAPI service
-- [ ] Phase 4 — Supabase integration
+- [x] Phase 4 — Supabase integration
 - [ ] Phase 5 — Stream simulator
 - [ ] Phase 6 — React dashboard
 - [ ] Phase 7 — Docker, CI, deployment
