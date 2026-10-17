@@ -57,7 +57,8 @@ def test_openapi_lists_every_endpoint():
     with TestClient(create_app(make_settings())) as client:
         paths = client.get("/openapi.json").json()["paths"]
         assert client.get("/docs").status_code == 200
-    assert set(paths) == {"/health", "/predict", "/predict/batch", "/explain", "/metrics"}
+    assert set(paths) == {"/health", "/predict", "/predict/batch", "/explain",
+                          "/explain/{transaction_id}", "/metrics"}
     assert set(paths["/predict"]) == {"post"}
 
 

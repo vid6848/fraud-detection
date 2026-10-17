@@ -138,7 +138,9 @@ def test_predict_normal_transaction(client):
     r = client.post("/predict", json=EXAMPLE_TRANSACTION)
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"probability", "risk_level", "reasons", "model_version", "latency_ms"}
+    assert set(body) == {"probability", "risk_level", "reasons", "transaction_id",
+                         "model_version", "latency_ms"}
+    assert body["transaction_id"] is None  # storage is off in these tests
     assert body["risk_level"] == "LOW"
     assert 0 <= body["probability"] < MEDIUM
     assert body["reasons"] == []
