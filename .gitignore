@@ -48,6 +48,9 @@ supabase/.branches/
 # --- Local tool config ---
 .mcp.json
 
+# --- Simulator run reports (python -m simulator) ---
+simulator/reports/
+
 # --- ML smoke runs (python -m ml.train --quick) ---
 ml/artifacts/quick/
 ml/artifacts/train.log

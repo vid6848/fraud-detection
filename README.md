@@ -19,10 +19,10 @@ An end-to-end fraud detection system: machine-learning models trained on 284,807
 - FastAPI endpoints: `/predict`, `/predict/batch`, `/explain`, `/explain/{id}` (stored transactions, analysts only), `/health`, `/metrics` (p50/p95/p99 latency)
 - Every scored transaction saved to Supabase in a background task (scoring keeps working if the database is down)
 - Hybrid scoring: ML model + a small rules layer
-- LOW / MEDIUM / HIGH risk levels; HIGH risk automatically raises an alert
+- LOW / MEDIUM / HIGH risk levels; MEDIUM and HIGH automatically raise an alert
 
 **Real-time pipeline**
-- Stream simulator replays held-out transactions at a configurable rate (e.g. 20/sec)
+- Stream simulator replays held-out test transactions at a fixed rate (e.g. 20/sec) or at their real time gaps sped up, with retries, a failing-API cut-off, a live terminal view and a JSON run report
 - Every scored transaction stored in Supabase Postgres
 - Supabase Realtime pushes new transactions and alerts to the dashboard instantly
 
@@ -423,6 +423,108 @@ RLS is on for all four tables. Access is set in two layers: grants decide which 
 6. **Start the API** and score something: the transaction appears in `transactions`, and an alert appears in `alerts` if it's MEDIUM/HIGH.
 7. **Run the integration tests:** `pytest -m integration`. They're skipped automatically when credentials are missing, and clean up the rows they create.
 
+## Simulator
+
+The features are anonymized, so "real time" means replaying the held-out **test split** (the last ~6 hours of the dataset, which the model never saw) through the API, oldest transaction first. [`simulator/`](simulator/) does that, and the scored transactions land in Supabase exactly as live traffic would.
+
+**The label never reaches the API.** Each request contains only `Time`, `V1`–`V28` and `Amount` (a test checks this). The simulator keeps `Class` on your machine and only uses it at the end, to count how many frauds the API caught and missed.
+
+### Run it (two terminals)
+
+```bash
+# terminal 1: the API (saves to Supabase if the SUPABASE_* variables are set)
+source .venv/bin/activate
+uvicorn api.main:app --no-access-log
+
+# terminal 2: the stream
+source .venv/bin/activate
+python -m simulator                              # 20 rows/s through the whole test split (~36 min)
+python -m simulator --limit 300                  # first 300 test rows (15 s)
+python -m simulator --offset 9600 --limit 300    # a 300-row window with 4 labelled frauds
+python -m simulator --mode replay --speed 10     # real gaps between transactions, 10x faster
+python -m simulator --batch 50 --rate 200        # 50 rows per POST /predict/batch
+```
+
+The simulator checks `GET /health` first and exits with a clear message if the API isn't running. **Ctrl+C** stops it gracefully: no new requests, in-flight ones get up to 5 s to finish, then the summary prints and the report is saved.
+
+| Option | Default | What it does |
+|---|---|---|
+| `--rate` | 20 | Rows per second (fixed mode) |
+| `--mode` | `fixed` | `fixed` = steady `--rate`; `replay` = the real gaps between the dataset's `Time` values, divided by `--speed` |
+| `--speed` | 10 | Replay speed-up. The test period averages ~2 transactions per real second, so ×10 is ~20/s |
+| `--limit` / `--offset` | all / 0 | How many test rows to send, and which row to start from |
+| `--api-url` | `API_URL` in `.env` | API base URL (falls back to `http://localhost:8000`) |
+| `--concurrency` | 10 | Max requests in flight |
+| `--batch` | 1 | Rows per request; above 1 uses `POST /predict/batch` (max 1,000). The rate stays rows per second |
+| `--retries` | 3 | Retries for connection errors, timeouts and 5xx |
+| `--max-error-rate` | 0.2 | Stop if more than this share of the last 100 requests failed |
+| `--timeout` | 10 | Seconds per request |
+| `--report-dir` / `--no-live` | `simulator/reports/` / off | Where the JSON report goes; turn off the live view |
+
+**Pacing is fixed in advance.** Row *n* is due at *n* / rate seconds (or at its replayed time). A slow response doesn't push later sends back, so the API really gets the rate you asked for. If `--concurrency` requests are already waiting, the run falls behind and the report shows the lower actual rate.
+
+**Request IDs.** Every request carries `X-Request-ID: sim-<run>-<row>` (`sim-<run>-b<first row>` for batches), so a row can be traced from the simulator to the API's JSON log line.
+
+### Example run
+
+The end-to-end check for this phase was the API with Supabase storage on, plus `python -m simulator --offset 9600 --limit 300`. While it runs, the terminal redraws this block in place (frozen here at the end of the run):
+
+```
+sent 300/300  ok 300  errors 0  retries 0  |  20.0 rows/s  |  15s
+latency (last 300)  p50 14.2 ms  p95 15.7 ms
+risk     LOW 298  MEDIUM 0  HIGH 2
+frauds   caught HIGH 2  caught MEDIUM 0  missed 2  |  false alarms 0
+failed requests  none
+```
+
+When it finishes:
+
+```
+== run 20261017-162804-c0e7 completed after 15.0s ==
+rows      sent 300 of 300  ok 300  errors 0  retries 0  (20.0 rows/s, 300 requests)
+latency   round trip p50 14.2 ms  p95 15.7 ms  p99 19.8 ms  |  server p50 11.6 ms
+risk      LOW 298  MEDIUM 0  HIGH 2
+frauds    4 sent: caught HIGH 2, caught MEDIUM 0, missed 2
+quality   recall HIGH 50.0%  HIGH+MEDIUM 50.0%  |  precision HIGH 100.0%  flagged 100.0%  |  false alarms 0
+report    simulator/reports/run-20261017-162804-c0e7.json
+```
+
+Supabase matched this exactly: 300 new rows in `transactions` (298 LOW, 2 HIGH) and 2 open alerts. The 2 missed frauds scored LOW. That's a small sample (the model's recall on the whole test set is 75%), but it's what happened. These rows are left in place as demo data for the dashboard.
+
+### What the report means
+
+When output goes to a file or pipe instead of a terminal, the live block becomes one progress line every 5 s. The JSON report (`simulator/reports/run-<id>.json`, gitignored) holds everything below, plus the settings used:
+
+| Field | Meaning |
+|---|---|
+| `stopped_reason` | `completed`, `interrupted` (Ctrl+C, exit code 130) or `error_rate` (gave up on a failing API, exit code 3) |
+| `rows` | Rows planned, sent, scored (`ok`), failed, never sent (stopped early), and cancelled in flight |
+| `requests` | HTTP requests sent and failed. Same as rows unless `--batch` is used |
+| `actual_rate_per_s` | Rows sent per second, measured |
+| `retries`, `errors_by_kind` | Extra attempts made, and failed requests by kind (`http_422`, `ConnectError`, `bad_response`, ...) |
+| `latency_ms` | p50/p95/p99 per request: `client_round_trip` (what a caller waits) and `server` (the API's own `latency_ms`) |
+| `risk_levels`, `bands` | Rows per risk level; `bands` splits each level into fraud and legit using the local labels |
+| `frauds` | Labelled frauds sent: `caught_high`, `caught_medium`, `missed_low` (scored LOW) and `not_scored` (their request failed) |
+| `recall_high`, `recall_high_or_medium` | Share of the scored frauds that were flagged HIGH, or HIGH or MEDIUM |
+| `precision_high`, `precision_flagged`, `false_alarms` | Share of HIGH (or MEDIUM+HIGH) rows that really were fraud; legit rows flagged (each one costs an analyst review) |
+
+These are honest per-run numbers on whatever slice you replay. A short run sees only a handful of frauds, so expect them to swing; the model's real test-set metrics are in [Results](#results).
+
+### When the API misbehaves
+
+- **Retries.** Connection errors, timeouts and 5xx are retried with exponential backoff (about 0.25 s, 0.5 s, 1 s, each ±20% jitter), and a retry keeps its request ID. **4xx is never retried**: a 422 means the request itself is wrong, so sending it again can't help. It's counted and the run moves on.
+- **Failing-API cut-off.** If more than `--max-error-rate` of the last 100 requests failed (checked once 20 have finished), the run stops instead of hammering a broken API. It still writes the summary and report. Tested for real by killing the API mid-run: 30 requests failed after 3 retries each, and the run stopped with exit code 3.
+- **Malformed responses.** A 200 with an unexpected body is counted as `bad_response`, never silently dropped.
+
+### Reset the demo data
+
+```bash
+python scripts/reset_demo_data.py         # shows the counts, asks you to type "yes"
+python scripts/reset_demo_data.py --yes   # no prompt
+```
+
+It deletes every row in `transactions`, and their alerts and feedback go with them. `model_runs` is kept. It uses the service role key from `.env`, so it only runs server-side.
+
 ## How to run
 
 *Placeholder — detailed steps will be added as each component is built.*
@@ -434,7 +536,7 @@ RLS is on for all four tables. Access is set in two layers: grants decide which 
 5. **Start the API:** `uvicorn api.main:app --no-access-log` (see [API](#api)).
 6. **Set up the database:** apply `supabase/migrations/`, create an analyst and load the model results (see [Database → Set up your own project](#set-up-your-own-project)).
 7. **Start the dashboard:** install and run the React app in `web/`.
-8. **Start the stream:** run the simulator to replay transactions at e.g. 20/sec.
+8. **Start the stream:** `python -m simulator` in a second terminal (see [Simulator](#simulator)).
 9. **Or run everything with Docker Compose** *(Phase 7)*.
 
 ## Roadmap
@@ -444,6 +546,6 @@ RLS is on for all four tables. Access is set in two layers: grants decide which 
 - [x] Phase 2 — Training pipeline & model comparison
 - [x] Phase 3 — FastAPI service
 - [x] Phase 4 — Supabase integration
-- [ ] Phase 5 — Stream simulator
+- [x] Phase 5 — Stream simulator
 - [ ] Phase 6 — React dashboard
 - [ ] Phase 7 — Docker, CI, deployment
