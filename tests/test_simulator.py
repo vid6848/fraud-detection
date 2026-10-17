@@ -4,6 +4,7 @@ The fake API is an httpx.MockTransport; time is a fake clock whose sleep() just
 moves the clock forward, so pacing can be checked exactly and instantly.
 """
 import asyncio
+import io
 import json
 
 import httpx
@@ -11,10 +12,12 @@ import pytest
 
 from ml.config import RAW_COLUMNS, SPLIT_BOUNDARIES, TARGET
 from simulator import __main__ as cli
-from simulator.client import ApiUnavailable
+from simulator.client import ApiUnavailable, Result
+from simulator.display import LiveView, render, render_summary
 from simulator.data import load_stream
 from simulator.runner import Config, new_run_id, request_id, run
 from simulator.schedule import send_offsets
+from simulator.stats import RunStats
 from tests.synthetic import make_transactions
 
 DF = make_transactions(6_000, fraud_rate=0.05)
@@ -66,11 +69,15 @@ class FakeApi:
         return [json.loads(r.content) for r in self.requests]
 
 
+def run_sync(*args, **kwargs):
+    return asyncio.run(run(*args, **kwargs)).results
+
+
 def simulate(stream, config=Config(), api=None, time=None, run_id="test-run"):
     time = time or FakeTime()
     api = api or FakeApi(time)
-    results = asyncio.run(run(stream, config, run_id, transport=api.transport,
-                              sleep=time.sleep, clock=time.clock))
+    results = run_sync(stream, config, run_id, transport=api.transport,
+                              sleep=time.sleep, clock=time.clock)
     return results, api
 
 
@@ -171,8 +178,8 @@ def test_concurrency_cap_is_respected():
         return httpx.Response(200, json={"probability": 0.0, "risk_level": "LOW", "reasons": []})
 
     stream = load_stream(DF, limit=40)
-    results = asyncio.run(run(stream, Config(rate=10_000, concurrency=3), "r",
-                              transport=httpx.MockTransport(slow)))
+    results = run_sync(stream, Config(rate=10_000, concurrency=3), "r",
+                              transport=httpx.MockTransport(slow))
     assert len(results) == 40
     assert peak == 3
 
@@ -191,8 +198,8 @@ def test_unreachable_api():
         raise httpx.ConnectError("refused", request=request)
 
     with pytest.raises(ApiUnavailable, match="cannot reach"):
-        asyncio.run(run(load_stream(DF, limit=5), Config(), "r",
-                        transport=httpx.MockTransport(down)))
+        run_sync(load_stream(DF, limit=5), Config(), "r",
+                        transport=httpx.MockTransport(down))
 
 
 def test_http_errors_are_results_not_crashes():
@@ -201,14 +208,14 @@ def test_http_errors_are_results_not_crashes():
             return httpx.Response(200, json=HEALTHY)
         return httpx.Response(422, json={"error": {"code": "validation_error"}})
 
-    results = asyncio.run(run(load_stream(DF, limit=3), Config(rate=1000), "r",
-                              transport=httpx.MockTransport(handler)))
+    results = run_sync(load_stream(DF, limit=3), Config(rate=1000), "r",
+                              transport=httpx.MockTransport(handler))
     assert [(r.ok, r.status, r.error) for r in results] == [(False, 422, "http_422")] * 3
 
 
 def test_bad_concurrency():
     with pytest.raises(ValueError):
-        asyncio.run(run(load_stream(DF, limit=1), Config(concurrency=0), "r"))
+        run_sync(load_stream(DF, limit=1), Config(concurrency=0), "r")
 
 
 def test_run_ids_are_valid_request_id_parts():
@@ -233,22 +240,52 @@ def test_cli_rejects_unknown_mode():
         cli.parse_args(["--mode", "warp"])
 
 
-def test_cli_main_end_to_end(monkeypatch, capsys):
-    api = FakeApi()
+def fake_cli_run(monkeypatch, api, stop_after=None):
+    """Route the CLI's run() to the fake API; optionally 'press Ctrl+C' after N results."""
     real_run = cli.run
 
-    async def run_with_fake_api(stream, config, run_id):
-        return await real_run(stream, config, run_id, transport=api.transport)
+    async def run_with_fake_api(stream, config, run_id, **kwargs):
+        if stop_after is not None:
+            record, stop = kwargs["on_result"], kwargs["stop"]
+
+            def on_result(result):
+                record(result)
+                if result.index + 1 >= stop_after:
+                    stop.set()
+            kwargs["on_result"] = on_result
+        return await real_run(stream, config, run_id, transport=api.transport, **kwargs)
 
     monkeypatch.setattr(cli, "load_stream", lambda offset, limit: load_stream(DF, offset, limit))
     monkeypatch.setattr(cli, "run", run_with_fake_api)
-    assert cli.main(["--limit", "20", "--rate", "1000"]) == 0
+
+
+def test_cli_main_end_to_end(monkeypatch, capsys, tmp_path):
+    fake_cli_run(monkeypatch, FakeApi())
+    assert cli.main(["--limit", "20", "--rate", "1000", "--no-live",
+                     "--report-dir", str(tmp_path)]) == 0
     out = capsys.readouterr().out
-    assert "sent 20, ok 20, errors 0" in out
+    assert "completed" in out and "sent 20 of 20  ok 20  errors 0" in out
+    [path] = tmp_path.glob("run-*.json")
+    report = json.loads(path.read_text())
+    assert report["rows"]["sent"] == 20 and report["stopped_reason"] == "completed"
+    assert report["config"]["limit"] == 20
+    assert str(path) in out
+
+
+def test_ctrl_c_still_writes_the_report(monkeypatch, capsys, tmp_path):
+    fake_cli_run(monkeypatch, FakeApi(), stop_after=5)
+    code = cli.main(["--limit", "100", "--rate", "50", "--concurrency", "1", "--no-live",
+                     "--report-dir", str(tmp_path)])
+    assert code == 130
+    report = json.loads(next(tmp_path.glob("run-*.json")).read_text())
+    assert report["stopped_reason"] == "interrupted"
+    assert 5 <= report["rows"]["sent"] < 100
+    assert report["rows"]["not_sent"] == 100 - report["rows"]["sent"]
+    assert "interrupted" in capsys.readouterr().out
 
 
 def test_cli_main_reports_unavailable_api(monkeypatch, capsys):
-    async def unavailable(stream, config, run_id):
+    async def unavailable(stream, config, run_id, **kwargs):
         raise ApiUnavailable("cannot reach the API")
 
     monkeypatch.setattr(cli, "load_stream", lambda offset, limit: load_stream(DF, offset, limit))
@@ -263,8 +300,8 @@ def test_connection_error_mid_run_is_a_result():
             return httpx.Response(200, json=HEALTHY)
         raise httpx.ReadTimeout("slow", request=request)
 
-    results = asyncio.run(run(load_stream(DF, limit=2), Config(rate=1000), "r",
-                              transport=httpx.MockTransport(handler)))
+    results = run_sync(load_stream(DF, limit=2), Config(rate=1000), "r",
+                              transport=httpx.MockTransport(handler))
     assert [(r.ok, r.status, r.error) for r in results] == [(False, None, "ReadTimeout")] * 2
 
 
@@ -273,3 +310,135 @@ def test_health_check_with_non_json_body():
     api.handler = lambda request: httpx.Response(502, text="<html>bad gateway</html>")
     with pytest.raises(ApiUnavailable, match="502"):
         simulate(load_stream(DF, limit=1), api=api)
+
+
+
+# --- stats and report ------------------------------------------------------------
+
+def _result(index, level=None, ok=True, error=None, latency=10.0, attempts=1):
+    return Result(index, f"sim-r-{index}", ok=ok, status=200 if ok else None, latency_ms=latency,
+                  risk_level=level, probability=0.5, server_latency_ms=latency / 2,
+                  error=error, attempts=attempts)
+
+
+def test_stats_bands_use_local_labels():
+    labels = [1, 1, 1, 1, 0, 0, 0, 1]
+    stats = RunStats(labels)
+    for r in [_result(0, "HIGH"), _result(1, "MEDIUM"), _result(2, "LOW"),
+              _result(3, ok=False, error="ConnectError", attempts=3),
+              _result(4, "HIGH"), _result(5, "MEDIUM"), _result(6, "LOW")]:
+        stats.record(r)
+    assert stats.frauds() == {"total_sent": 4, "caught_high": 1, "caught_medium": 1,
+                              "missed_low": 1, "not_scored": 1}
+    assert stats.false_alarms() == 2
+    assert stats.risk_counts() == {"LOW": 2, "MEDIUM": 2, "HIGH": 2}
+    assert stats.retries == 2 and dict(stats.errors) == {"ConnectError": 1}
+
+    report = stats.to_report(run_id="r", config={}, started_at="a", ended_at="b",
+                             duration_s=2.0, stopped_reason="completed")
+    assert report["rows"] == {"planned": 8, "sent": 7, "ok": 6, "errors": 1, "not_sent": 1}
+    assert report["actual_rate_per_s"] == 3.5
+    assert report["bands"]["HIGH"] == {"rows": 2, "frauds": 1, "legit": 1, "fraud_rate": 0.5}
+    assert report["frauds"]["recall_high"] == round(1 / 3, 4)
+    assert report["frauds"]["recall_high_or_medium"] == round(2 / 3, 4)
+    assert report["precision_flagged"] == 0.5
+    assert report["latency_ms"]["client_round_trip"]["p50"] == 10.0
+    assert report["latency_ms"]["server"]["p50"] == 5.0
+    assert (report["first_request_id"], report["last_request_id"]) == ("sim-r-0", "sim-r-6")
+    json.dumps(report)
+
+
+def test_empty_report_has_no_divisions_by_zero():
+    report = RunStats([0, 1]).to_report(run_id="r", config={}, started_at="a", ended_at="b",
+                                        duration_s=0.0, stopped_reason="interrupted")
+    assert report["actual_rate_per_s"] is None
+    assert report["precision_high"] is None and report["frauds"]["recall_high"] is None
+    assert report["latency_ms"]["client_round_trip"] == {"count": 0, "p50": None,
+                                                         "p95": None, "p99": None}
+    assert "== run r interrupted" in "\n".join(render_summary(report, None))
+
+
+def test_live_frame_and_summary_text():
+    stats = RunStats([1, 0])
+    stats.record(_result(0, "HIGH"))
+    stats.record(_result(1, ok=False, error="http_422"))
+    frame = "\n".join(render(stats, elapsed_s=2.0))
+    assert "sent 2/2  ok 1  errors 1" in frame and "1.0 rows/s" in frame
+    assert "caught HIGH 1" in frame and "http_422 1" in frame
+    report = stats.to_report(run_id="r", config={}, started_at="a", ended_at="b",
+                             duration_s=1.0, stopped_reason="completed")
+    summary = "\n".join(render_summary(report, "simulator/reports/run-r.json"))
+    assert "caught HIGH 1" in summary and "errors    http_422 1" in summary
+    assert "report    simulator/reports/run-r.json" in summary
+
+
+class FakeTerminal(io.StringIO):
+    def __init__(self, tty):
+        super().__init__()
+        self.tty = tty
+
+    def isatty(self):
+        return self.tty
+
+
+@pytest.mark.parametrize("tty", [True, False])
+def test_live_view_redraws_in_place_only_on_a_terminal(tty):
+    out = FakeTerminal(tty)
+    view = LiveView(RunStats([0]), clock=lambda: 1.0, out=out)
+    view.draw()
+    view.draw()
+    text = out.getvalue()
+    assert ("\x1b[" in text) is tty
+    assert text.count("sent 0/1") == 2
+    assert len(text.splitlines()) == (10 if tty else 2)
+
+
+def test_live_view_loop_stops_when_done():
+    async def go():
+        out = FakeTerminal(False)
+        done = asyncio.Event()
+        view = LiveView(RunStats([0]), clock=lambda: 0.0, out=out, plain_every_s=0.001)
+        task = asyncio.create_task(view.run(done))
+        await asyncio.sleep(0.01)
+        done.set()
+        await task
+        return out.getvalue()
+
+    assert asyncio.run(go()).count("sent 0/1") >= 2  # periodic draws + a final one
+
+
+def test_stop_during_the_schedule():
+    async def go():
+        stop = asyncio.Event()
+        results = []
+
+        def on_result(r):
+            results.append(r)
+            stop.set()
+
+        outcome = await run(load_stream(DF, limit=50), Config(rate=100), "r",
+                            transport=FakeApi().transport, on_result=on_result, stop=stop)
+        return outcome
+
+    outcome = asyncio.run(go())
+    assert outcome.stopped_reason == "interrupted"
+    assert 1 <= len(outcome.results) < 50
+
+
+def test_stop_while_waiting_for_in_flight_requests():
+    async def go():
+        stop = asyncio.Event()
+
+        async def hang(request):
+            if request.url.path == "/health":
+                return httpx.Response(200, json=HEALTHY)
+            stop.set()                      # Ctrl+C arrives while this request is in flight
+            await asyncio.sleep(10)
+            return httpx.Response(200, json={})
+
+        return await run(load_stream(DF, limit=1), Config(grace_s=0.01), "r",
+                         transport=httpx.MockTransport(hang), stop=stop)
+
+    outcome = asyncio.run(go())
+    assert outcome.stopped_reason == "interrupted"
+    assert outcome.cancelled == 1 and outcome.results == []

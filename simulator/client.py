@@ -21,6 +21,7 @@ class Result:
     server_latency_ms: float | None = None
     transaction_id: str | None = None
     error: str | None = None        # e.g. "http_422", "ConnectError"
+    attempts: int = 1               # > 1 when the request was retried
 
 
 async def check_health(client: httpx.AsyncClient) -> dict:
