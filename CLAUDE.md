@@ -8,11 +8,12 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
 
 ## Current status
 
-- **Phase:** 4 — Supabase ✅ complete (2026-10-17; PR `phase-4-supabase` → `main` open, user merges on GitHub)
-- **Last completed:** Phase 4 — Supabase project `vdgitnbugzxcdneedsby`. Migrations in `supabase/migrations/` (create_tables, rls_policies, realtime; file names = applied versions). Alert trigger (MEDIUM/HIGH → `alerts`), review-stamp trigger (`reviewed_by`/`reviewed_at` from `auth.uid()`), Realtime on `transactions`/`alerts`. API saves rows in a background task (`api/storage.py`, PostgREST direct), returns `transaction_id`, counts failures in `/metrics.storage`; `GET /explain/{id}` reads with the caller's JWT so RLS applies. `scripts/load_model_runs.py` upserts metadata.json → `model_runs`. 224 tests (12 integration, skipped without creds), `api/` 100% line+branch. Security advisor clean. Benchmark with storage on: `/predict` p50 8.7 ms (6.6 off).
+- **Phase:** 5 — Stream simulator ✅ complete (2026-10-17; branch `phase-5-simulator` pushed, user opens the PR and merges on GitHub)
+- **Last completed:** Phase 5 — `simulator/` (`data.py` test split via `ml.split.time_split`, labels kept local; `schedule.py` fixed/replay open-loop pacing; `client.py` /predict + /predict/batch, retryable = no status or 5xx; `runner.py` async httpx, semaphore concurrency, retries with backoff, error-rate stop, Ctrl+C grace; `stats.py` + `display.py` live view and JSON report in gitignored `simulator/reports/`). Run `python -m simulator`. Exit codes: 0 completed, 3 error_rate, 130 interrupted. `scripts/reset_demo_data.py` (asks "yes"; deletes transactions → alerts/feedback cascade; keeps model_runs). 292 tests (12 integration), `api/` + `simulator/` 99% line+branch (only `if __name__` uncovered). E2E: `--offset 9600 --limit 300` → 300 rows stored (298 LOW, 2 HIGH), 2 alerts, 4 frauds in window: 2 caught HIGH, 2 missed; 20.0 rows/s, p50 14.2 ms round trip. **Those 300 rows + 2 alerts are left in Supabase as Phase 6 demo data.**
+- Phase 4 (for reference): Supabase project `vdgitnbugzxcdneedsby`; migrations in `supabase/migrations/`; alert trigger (MEDIUM/HIGH), review-stamp trigger, Realtime on transactions/alerts; API background writes, `GET /explain/{id}` with caller's JWT; `scripts/load_model_runs.py`.
 - Phase 3 (for reference): FastAPI `/health`, `/predict`, `/predict/batch`, `/explain`, `/metrics`; `/predict` p50 6.6 ms storage off.
 - Phase 2 (for reference): Random Forest + class weights, isotonic-calibrated; test PR-AUC 0.744, precision 0.812, recall 0.750, cost saved $3,556 of $6,169 (`docs/model_results.md`).
-- **Next step:** Phase 5 — Stream simulator
+- **Next step:** Phase 6 — React dashboard
 - **Open questions / blockers:** none
 - **Notes:**
   - Using Python 3.13 (3.11 not installed; user chose 3.13).
@@ -28,6 +29,7 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
   - Phase 4 decisions (user): `/explain/{id}` analysts only (Bearer JWT → read with anon key + JWT); analyst = any logged-in user, public sign-ups **off** in the dashboard (one demo analyst, creds in `.env` as `DEMO_ANALYST_EMAIL`/`DEMO_ANALYST_PASSWORD`); raw `Time` stored as `transactions.time_seconds`.
   - RLS: anon has no grants at all; `authenticated` has select on all 4 tables, column grant `update (status)` on alerts, `insert (alert_id, label, note)` on feedback. Service role key is server-side only (API, scripts), never in `web/`.
   - Apply new migrations with the Supabase MCP `apply_migration`, then rename the file to the version shown by `list_migrations`. Run `get_advisors` (security + performance) after DDL; "unused index" INFO notes are expected on empty tables.
+  - Phase 5 notes: per-row stats (bands, frauds) vs per-request stats (latency, retries, errors_by_kind) differ only with `--batch`. Fraud-rich demo windows: 300-row windows with 4–5 frauds start around test offsets 9550–9750 (max 5 in any 300-row window). Tests use a fake clock (`FakeTime`) and `httpx.MockTransport`; no server or dataset needed. Real-API checks this phase ran with storage off (`SUPABASE_URL=`) except the one E2E run.
   - Integration tests: `pytest -m integration` (marker in `pytest.ini`); they hit the real project and delete their rows. Running the benchmark with storage on writes real rows; delete them afterwards (or run with `SUPABASE_URL=` to disable storage).
 
 > Update this section at the end of every phase.
@@ -160,9 +162,9 @@ docs/        # extra documentation, screenshots
 - [x] Integration tests
 
 ### Phase 5 — Stream simulator
-- [ ] Replay test-set rows to `/predict` at configurable rate
-- [ ] CLI options (rate, limit, API URL)
-- [ ] Tests
+- [x] Replay test-set rows to `/predict` at configurable rate
+- [x] CLI options (rate, limit, API URL)
+- [x] Tests
 
 ### Phase 6 — React dashboard
 - [ ] Vite + React + TS + Tailwind scaffold
