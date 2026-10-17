@@ -2,6 +2,9 @@
 
 Fraud counts use the labels kept locally by the simulator (the API never sees
 them): each scored row lands in its risk band, split into fraud / legit.
+
+Rows and requests are counted separately: in batch mode one request carries many
+rows, so latency, retries and errors-by-kind are per request, everything else per row.
 """
 from collections import Counter, deque
 
@@ -17,9 +20,12 @@ class RunStats:
     def __init__(self, labels: list[int], live_window: int = LIVE_WINDOW):
         self.labels = labels
         self.planned = len(labels)
-        self.sent = 0
+        self.sent = 0                    # rows
         self.ok = 0
-        self.errors = Counter()          # error kind -> count, e.g. {"http_422": 3}
+        self.failed = 0
+        self.requests = 0
+        self.failed_requests = 0
+        self.errors = Counter()          # failed requests by kind, e.g. {"http_422": 3}
         self.retries = 0
         self.latencies: list[float] = []         # client round trip, every ok request
         self.server_latencies: list[float] = []  # the API's own latency_ms
@@ -29,27 +35,32 @@ class RunStats:
         self.first_request_id: str | None = None
         self.last_request_id: str | None = None
 
-    def record(self, result: Result) -> None:
-        self.sent += 1
-        self.retries += result.attempts - 1
+    def record(self, results: list[Result]) -> None:
+        """The results of one finished request (one per row)."""
+        first = results[0]
+        self.requests += 1
+        self.retries += first.attempts - 1
         if self.first_request_id is None:
-            self.first_request_id = result.request_id
-        self.last_request_id = result.request_id
-        is_fraud = self.labels[result.index] == 1
-        if not result.ok:
-            self.errors[result.error] += 1
-            self.unscored_frauds += is_fraud
+            self.first_request_id = first.request_id
+        self.last_request_id = first.request_id
+        self.sent += len(results)
+        if not first.ok:
+            self.failed_requests += 1
+            self.errors[first.error] += 1
+            self.failed += len(results)
+            self.unscored_frauds += sum(self.labels[r.index] for r in results)
             return
-        self.ok += 1
-        self.latencies.append(result.latency_ms)
-        self.recent.append(result.latency_ms)
-        if result.server_latency_ms is not None:
-            self.server_latencies.append(result.server_latency_ms)
-        self.bands[result.risk_level]["fraud" if is_fraud else "legit"] += 1
+        self.ok += len(results)
+        self.latencies.append(first.latency_ms)
+        self.recent.append(first.latency_ms)
+        if first.server_latency_ms is not None:
+            self.server_latencies.append(first.server_latency_ms)
+        for r in results:
+            self.bands[r.risk_level]["fraud" if self.labels[r.index] == 1 else "legit"] += 1
 
     @property
     def error_count(self) -> int:
-        return sum(self.errors.values())
+        return self.failed
 
     def risk_counts(self) -> dict[str, int]:
         return {level: sum(self.bands[level].values()) for level in LEVELS}
@@ -102,6 +113,7 @@ class RunStats:
                 "errors": self.error_count,
                 "not_sent": self.planned - self.sent,
             },
+            "requests": {"sent": self.requests, "failed": self.failed_requests},
             "actual_rate_per_s": round(self.sent / duration_s, 2) if duration_s > 0 else None,
             "errors_by_kind": dict(sorted(self.errors.items())),
             "retries": self.retries,

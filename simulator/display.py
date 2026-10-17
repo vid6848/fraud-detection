@@ -32,7 +32,7 @@ def render(stats: RunStats, elapsed_s: float) -> list[str]:
         f"risk     LOW {risk['LOW']}  MEDIUM {risk['MEDIUM']}  HIGH {risk['HIGH']}",
         f"frauds   caught HIGH {frauds['caught_high']}  caught MEDIUM {frauds['caught_medium']}  "
         f"missed {frauds['missed_low']}  |  false alarms {stats.false_alarms()}",
-        f"errors   {errors}",
+        f"failed requests  {errors}",
     ]
 
 
@@ -50,7 +50,7 @@ def render_summary(report: dict, path: str | None) -> list[str]:
         f"after {report['duration_s']:.1f}s ==",
         f"rows      sent {rows['sent']} of {rows['planned']}  ok {rows['ok']}  "
         f"errors {rows['errors']}  retries {report['retries']}  "
-        f"({report['actual_rate_per_s'] or 0:.1f} rows/s)",
+        f"({report['actual_rate_per_s'] or 0:.1f} rows/s, {report['requests']['sent']} requests)",
         f"latency   round trip p50 {_fmt(rt['p50'], ' ms')}  p95 {_fmt(rt['p95'], ' ms')}  "
         f"p99 {_fmt(rt['p99'], ' ms')}  |  server p50 {_fmt(server['p50'], ' ms')}",
         f"risk      LOW {risk['LOW']}  MEDIUM {risk['MEDIUM']}  HIGH {risk['HIGH']}",
@@ -63,7 +63,7 @@ def render_summary(report: dict, path: str | None) -> list[str]:
         f"flagged {pct(report['precision_flagged'])}  |  false alarms {report['false_alarms']}",
     ]
     if report["errors_by_kind"]:
-        lines.append("errors    " + ", ".join(f"{k} {v}"
+        lines.append("failed    " + ", ".join(f"{k} {v}"
                                               for k, v in report["errors_by_kind"].items()))
     if path:
         lines.append(f"report    {path}")

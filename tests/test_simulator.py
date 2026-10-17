@@ -248,9 +248,9 @@ def fake_cli_run(monkeypatch, api, stop_after=None):
         if stop_after is not None:
             record, stop = kwargs["on_result"], kwargs["stop"]
 
-            def on_result(result):
-                record(result)
-                if result.index + 1 >= stop_after:
+            def on_result(batch):
+                record(batch)
+                if batch[-1].index + 1 >= stop_after:
                     stop.set()
             kwargs["on_result"] = on_result
         return await real_run(stream, config, run_id, transport=api.transport, **kwargs)
@@ -327,7 +327,7 @@ def test_stats_bands_use_local_labels():
     for r in [_result(0, "HIGH"), _result(1, "MEDIUM"), _result(2, "LOW"),
               _result(3, ok=False, error="ConnectError", attempts=3),
               _result(4, "HIGH"), _result(5, "MEDIUM"), _result(6, "LOW")]:
-        stats.record(r)
+        stats.record([r])
     assert stats.frauds() == {"total_sent": 4, "caught_high": 1, "caught_medium": 1,
                               "missed_low": 1, "not_scored": 1}
     assert stats.false_alarms() == 2
@@ -360,15 +360,15 @@ def test_empty_report_has_no_divisions_by_zero():
 
 def test_live_frame_and_summary_text():
     stats = RunStats([1, 0])
-    stats.record(_result(0, "HIGH"))
-    stats.record(_result(1, ok=False, error="http_422"))
+    stats.record([_result(0, "HIGH")])
+    stats.record([_result(1, ok=False, error="http_422")])
     frame = "\n".join(render(stats, elapsed_s=2.0))
     assert "sent 2/2  ok 1  errors 1" in frame and "1.0 rows/s" in frame
     assert "caught HIGH 1" in frame and "http_422 1" in frame
     report = stats.to_report(run_id="r", config={}, started_at="a", ended_at="b",
                              duration_s=1.0, stopped_reason="completed")
     summary = "\n".join(render_summary(report, "simulator/reports/run-r.json"))
-    assert "caught HIGH 1" in summary and "errors    http_422 1" in summary
+    assert "caught HIGH 1" in summary and "failed    http_422 1" in summary
     assert "report    simulator/reports/run-r.json" in summary
 
 
@@ -442,3 +442,170 @@ def test_stop_while_waiting_for_in_flight_requests():
     outcome = asyncio.run(go())
     assert outcome.stopped_reason == "interrupted"
     assert outcome.cancelled == 1 and outcome.results == []
+
+
+# --- resilience: retries, error-rate stop, batch mode -----------------------------
+
+class ScriptedApi(FakeApi):
+    """Answers each scoring request with the next scripted response, then scores normally.
+
+    A script entry is an HTTP status (int) or "drop" for a connection error.
+    """
+
+    def __init__(self, script, time=None):
+        super().__init__(time)
+        self.script = list(script)
+
+    def handler(self, request):
+        if request.url.path != "/health" and self.script:
+            self.requests.append(request)
+            step = self.script.pop(0)
+            if step == "drop":
+                raise httpx.ConnectError("refused", request=request)
+            if step != 200:
+                return httpx.Response(step, json={"error": {"code": "x"}})
+            self.requests.pop()  # scored normally below (which records it again)
+        return super().handler(request)
+
+
+def test_5xx_is_retried_then_succeeds():
+    api = ScriptedApi([503, 500])
+    results, _ = simulate(load_stream(DF, limit=1), Config(retries=3), api=api)
+    [r] = results
+    assert r.ok and r.attempts == 3
+    ids = {req.headers["X-Request-ID"] for req in api.requests}
+    assert ids == {"sim-test-run-0"}  # a retry keeps its request ID
+
+
+def test_connection_error_is_retried_then_counted():
+    api = ScriptedApi(["drop"] * 4)
+    results, _ = simulate(load_stream(DF, limit=1), Config(retries=3), api=api)
+    [r] = results
+    assert not r.ok and r.error == "ConnectError" and r.attempts == 4
+    assert len(api.requests) == 4
+
+
+def test_422_is_never_retried():
+    api = ScriptedApi([422])
+    results, _ = simulate(load_stream(DF, limit=2), Config(retries=3), api=api)
+    assert [(r.ok, r.status, r.attempts) for r in results] == [(False, 422, 1), (True, 200, 1)]
+    assert len(api.requests) == 2  # the 422 once, then the second row
+
+
+def test_backoff_grows_and_has_jitter():
+    from simulator.client import backoff_delay, is_retryable
+
+    assert [backoff_delay(a, jitter=lambda lo, hi: 1.0) for a in (1, 2, 3)] == [0.25, 0.5, 1.0]
+    assert 0.2 <= backoff_delay(1) <= 0.3
+    assert is_retryable(None) and is_retryable(502)
+    assert not is_retryable(422) and not is_retryable(404)
+
+
+def test_run_stops_when_the_error_rate_is_too_high():
+    api = ScriptedApi([500] * 1000)
+    config = Config(retries=0, max_error_rate=0.2, min_requests=20, concurrency=1)
+    time = FakeTime()
+    outcome = asyncio.run(run(load_stream(DF, limit=200), config, "r", transport=api.transport,
+                              sleep=time.sleep, clock=time.clock))
+    assert outcome.stopped_reason == "error_rate"
+    assert 20 <= len(outcome.results) < 200
+
+
+def test_occasional_errors_do_not_stop_the_run():
+    api = ScriptedApi(([500] + [200] * 9) * 10)  # 10% failures: below the 20% limit
+    config = Config(retries=0, max_error_rate=0.2, concurrency=1)
+    results, _ = simulate(load_stream(DF, limit=100), config, api=api)
+    assert len(results) == 100
+
+
+def test_batch_mode_sends_groups_and_keeps_row_order():
+    batches = []
+
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(200, json=HEALTHY)
+        assert request.url.path == "/predict/batch"
+        rows = json.loads(request.content)["transactions"]
+        batches.append((request.headers["X-Request-ID"], rows))
+        return httpx.Response(200, json={
+            "results": [{"probability": r["Amount"] / 1e6, "risk_level": "LOW", "reasons": [],
+                         "transaction_id": None} for r in rows],
+            "count": len(rows), "model_version": "1.0.0", "latency_ms": 3.0})
+
+    stream = load_stream(DF, limit=23)
+    time = FakeTime()
+    outcome = asyncio.run(run(stream, Config(batch_size=10, rate=10), "r",
+                              transport=httpx.MockTransport(handler),
+                              sleep=time.sleep, clock=time.clock))
+    assert [len(rows) for _, rows in batches] == [10, 10, 3]
+    assert [rid for rid, _ in batches] == ["sim-r-b0", "sim-r-b10", "sim-r-b20"]
+    assert [rows for _, rows in batches] == [stream.payloads[0:10], stream.payloads[10:20],
+                                             stream.payloads[20:23]]
+    assert [r.index for r in outcome.results] == list(range(23))
+    assert [r.probability for r in outcome.results] == \
+        [p["Amount"] / 1e6 for p in stream.payloads]
+    assert time.now == pytest.approx(2.0)  # batches at 0 s, 1 s, 2 s: still 10 rows/s
+
+
+def test_batch_failure_fails_every_row_and_counts_one_request():
+    api = ScriptedApi([422])
+    stream = load_stream(DF, limit=5)
+    outcome = asyncio.run(run(stream, Config(batch_size=5), "r", transport=api.transport))
+    assert [r.error for r in outcome.results] == ["http_422"] * 5
+    stats = RunStats(stream.labels)
+    stats.record(outcome.results)
+    assert (stats.requests, stats.failed_requests, stats.failed, stats.sent) == (1, 1, 5, 5)
+
+
+def test_batch_latency_counts_once_per_request():
+    stats = RunStats([0, 0, 0])
+    stats.record([_result(i, "LOW", latency=30.0) for i in range(3)])
+    assert stats.latencies == [30.0] and stats.ok == 3 and stats.requests == 1
+
+
+@pytest.mark.parametrize("config", [Config(batch_size=0), Config(batch_size=1001),
+                                    Config(retries=-1), Config(max_error_rate=1.5)])
+def test_bad_resilience_settings(config):
+    with pytest.raises(ValueError):
+        asyncio.run(run(load_stream(DF, limit=1), config, "r"))
+
+
+def test_cli_rejects_bad_batch_size(capsys):
+    assert cli.main(["--batch", "5000"]) == 2
+    assert "batch size" in capsys.readouterr().err
+
+
+def test_cli_exit_code_when_the_api_keeps_failing(monkeypatch, tmp_path, capsys):
+    fake_cli_run(monkeypatch, ScriptedApi([500] * 1000))
+    code = cli.main(["--limit", "60", "--rate", "10000", "--retries", "0", "--concurrency", "1",
+                     "--no-live", "--report-dir", str(tmp_path)])
+    assert code == 3
+    report = json.loads(next(tmp_path.glob("run-*.json")).read_text())
+    assert report["stopped_reason"] == "error_rate"
+    assert report["errors_by_kind"] == {"http_500": report["requests"]["failed"]}
+
+
+
+@pytest.mark.parametrize("body", [{"unexpected": True}, [1, 2], "not json"])
+def test_malformed_200_is_an_error_not_a_crash(body):
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(200, json=HEALTHY)
+        if body == "not json":
+            return httpx.Response(200, text="<html>")
+        return httpx.Response(200, json=body)
+
+    results = run_sync(load_stream(DF, limit=2), Config(retries=3), "r",
+                       transport=httpx.MockTransport(handler))
+    assert [(r.ok, r.error, r.attempts) for r in results] == [(False, "bad_response", 1)] * 2
+
+
+def test_batch_with_wrong_number_of_results_is_an_error():
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(200, json=HEALTHY)
+        return httpx.Response(200, json={"results": [{"probability": 0.1, "risk_level": "LOW"}]})
+
+    results = run_sync(load_stream(DF, limit=3), Config(batch_size=3), "r",
+                       transport=httpx.MockTransport(handler))
+    assert [r.error for r in results] == ["bad_response"] * 3
