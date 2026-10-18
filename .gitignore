@@ -18,6 +18,7 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
 .ipynb_checkpoints/
 
@@ -30,6 +31,7 @@ env/
 node_modules/
 web/dist/
 .vite/
+web/coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
