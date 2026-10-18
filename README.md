@@ -8,7 +8,19 @@
 
 An end-to-end fraud detection system: machine-learning models trained on 284,807 real credit card transactions, served through a low-latency FastAPI service, fed by a real-time transaction stream, stored in Supabase, and monitored from a live React analyst dashboard. Every transaction gets a fraud probability, a LOW / MEDIUM / HIGH risk level, and a SHAP explanation of *why* — and analysts can review alerts and send feedback, just like in a production fraud operations team.
 
-> 🚧 **Status:** in development. Results and setup instructions will be filled in as each phase is completed.
+## Live demo
+
+| | |
+|---|---|
+| **Dashboard** | `https://<your-app>.vercel.app` *(link added after deployment)* |
+| **API docs** | `https://<your-api>.onrender.com/docs` *(link added after deployment)* |
+| **Analyst login** | Public sign-up is off; demo credentials on request |
+
+The API runs on Render's free plan and sleeps when idle: the first visit can take about a minute while it wakes (the dashboard says so). Once signed in, click **Start demo stream** to replay 200 held-out test transactions through the model and watch them, and the alerts they raise, arrive live. How it's deployed: [`docs/deployment.md`](docs/deployment.md).
+
+| Live feed | Alert detail with SHAP explanation |
+|---|---|
+| ![Live feed](docs/screenshots/live-feed.png) | ![Alert detail](docs/screenshots/alert-detail.png) |
 
 ## Features
 
@@ -22,7 +34,7 @@ An end-to-end fraud detection system: machine-learning models trained on 284,807
 - Per-transaction SHAP explanations
 
 **API**
-- FastAPI endpoints: `/predict`, `/predict/batch`, `/explain`, `/explain/{id}` (stored transactions, analysts only), `/health`, `/metrics` (p50/p95/p99 latency)
+- FastAPI endpoints: `/predict`, `/predict/batch`, `/explain`, `/explain/{id}` (stored transactions, analysts only), `/health`, `/metrics` (p50/p95/p99 latency), `/demo/stream` (server-side replay for the deployed demo), `/drift` (score drift)
 - Every scored transaction saved to Supabase in a background task (scoring keeps working if the database is down)
 - Hybrid scoring: ML model + a small rules layer
 - LOW / MEDIUM / HIGH risk levels; MEDIUM and HIGH automatically raise an alert
@@ -36,26 +48,51 @@ An end-to-end fraud detection system: machine-learning models trained on 284,807
 - Live transaction feed over Supabase Realtime, with pause/resume and live KPIs
 - Alert review queue: confirm fraud or mark a false alarm, with a note (feedback loop), and a notification for every new alert
 - Alert detail with SHAP feature-contribution bars from the API
-- Model & system page: test metrics with confidence intervals, model comparison, training charts, and live API health and latency
+- Model & system page: test metrics with confidence intervals, model comparison, training charts, score drift, and live API health and latency
+- One-click demo stream, and a friendly "API is waking up" state for the free-tier API
 - Secure analyst login (Supabase Auth + Row Level Security); dark and light themes; works on phones
 
 **Production-ready**
-- pytest test suite, Docker Compose, GitHub Actions CI
-- Drift monitoring (live score distribution vs. training)
-- Deployed API (Render) and dashboard (Vercel)
+- 376 pytest tests (98% coverage of `api/`, `simulator/`, `ml/`) + 308 dashboard tests, run by GitHub Actions on every PR, with coverage on Codecov
+- Slim, non-root Docker image for the API, built and smoke-tested in CI
+- Drift monitoring: Population Stability Index of live scores vs. the training distribution, labelled OK / Watch / Alert
+- Deployment config for Render (API) and Vercel (dashboard), with a step-by-step [guide](docs/deployment.md)
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A[Stream Simulator<br/>replays test set] -->|POST /predict| B[FastAPI Service]
-    B --> C[ML Model<br/>Random Forest + rules + SHAP]
-    C -->|score, risk level,<br/>explanation| B
-    B -->|insert transaction<br/>+ alert if HIGH| D[(Supabase<br/>Postgres)]
-    D -->|Realtime| E[React Dashboard]
-    E -->|analyst feedback| D
-    E -->|GET /explain, /metrics| B
+    subgraph sources [Transaction sources]
+        A[Stream simulator<br/>python -m simulator]
+        G[Demo stream<br/>POST /demo/stream]
+    end
+    subgraph render [Render: FastAPI service]
+        B[Scoring API]
+        C[Random Forest + isotonic calibration<br/>+ rules layer + SHAP]
+        H[Drift check<br/>PSI vs training scores]
+    end
+    subgraph supabase [Supabase]
+        D[(Postgres<br/>transactions · alerts · feedback · model_runs)]
+        F[Auth + Row Level Security]
+        R[Realtime]
+    end
+    subgraph vercel [Vercel]
+        E[React dashboard]
+    end
+    A -->|POST /predict| B
+    G --> B
+    B <--> C
+    B -->|"insert scored row<br/>(trigger adds an alert if MEDIUM/HIGH)"| D
+    D --> R -->|new transactions + alerts| E
+    E -->|login| F
+    E -->|review: status + feedback| D
+    E -->|"/explain/{id}, /drift, /demo/stream, /health, /metrics<br/>with the analyst's token"| B
+    H -->|"latest live scores, read with the analyst's token"| D
 ```
+
+- **Scoring path:** a transaction reaches the API, the model scores it in a few milliseconds, the rules layer can add reasons, and the response goes back at once; the row is saved to Supabase *after* the response, so storage never slows scoring.
+- **Alerting:** a database trigger creates an alert for every MEDIUM/HIGH row, and Realtime pushes both to every open dashboard.
+- **Security:** the browser only ever holds the Supabase publishable key and the analyst's login token, so Row Level Security decides what it may read or change. The secret key lives only on the API server.
 
 ## Tech stack
 
@@ -65,7 +102,7 @@ flowchart LR
 | API | FastAPI, pytest |
 | Database & auth | Supabase (Postgres, Realtime, Auth, Row Level Security) |
 | Frontend | React, Vite, TypeScript, Tailwind CSS, Recharts |
-| DevOps | Docker Compose, GitHub Actions, Render, Vercel |
+| DevOps | Docker, GitHub Actions, Codecov, Render, Vercel |
 
 ## Folder structure
 
@@ -77,10 +114,14 @@ flowchart LR
 ├── api/           # FastAPI scoring service
 │   └── assets/    # 200 unlabelled test rows for POST /demo/stream
 ├── simulator/     # real-time transaction stream replayer
-├── web/           # React analyst dashboard
-├── supabase/      # SQL migrations
+├── web/           # React analyst dashboard (vercel.json for deployment)
+├── supabase/      # SQL migrations and RLS checks
+├── scripts/       # load model results, demo rows, drift reference, reset demo data, benchmark
 ├── tests/         # pytest test suite
-└── docs/          # extra documentation and screenshots
+├── docs/          # EDA findings, model results, deployment guide, figures, screenshots
+├── .github/       # CI workflow
+├── Dockerfile     # production API image (Render)
+└── render.yaml    # Render Blueprint
 ```
 
 ## Dataset
@@ -657,15 +698,17 @@ Every page was checked with axe-core (WCAG 2.1 A/AA) in both themes, at laptop a
 
 ### Screenshots
 
-*Placeholder: screenshots will be added here (saved in `docs/screenshots/`).*
+Taken from the running dashboard against the real Supabase project (dark theme; a light theme is one click away).
 
-| Live feed | Alert detail | Model & system |
-|---|---|---|
-| *coming soon* | *coming soon* | *coming soon* |
+| | |
+|---|---|
+| **Landing page**: public, with an animated *sample* stream ![Landing page](docs/screenshots/landing.png) | **Live feed**: Realtime rows, KPIs, Start demo stream ![Live feed](docs/screenshots/live-feed.png) |
+| **Alert detail**: the transaction, why the model flagged it (SHAP), and the review buttons ![Alert detail](docs/screenshots/alert-detail.png) | **Model & system**: test metrics with 95% confidence intervals ![Model and system](docs/screenshots/model.png) |
+| **Score drift**: PSI of live vs training scores (here, 300 live scores: below the 500 needed for a verdict) ![Score drift](docs/screenshots/drift.png) | |
 
 ## How to run
 
-*Placeholder — detailed steps will be added as each component is built.*
+Locally (the deployed version is described in [`docs/deployment.md`](docs/deployment.md)):
 
 1. **Clone the repo** and download `creditcard.csv` from Kaggle into `data/`.
 2. **Set up Python:** create a Python 3.13 virtual environment and install `requirements.txt` (on macOS, XGBoost also needs `brew install libomp`).
@@ -674,8 +717,25 @@ Every page was checked with axe-core (WCAG 2.1 A/AA) in both themes, at laptop a
 5. **Start the API:** `uvicorn api.main:app --no-access-log` (see [API](#api)).
 6. **Set up the database:** apply `supabase/migrations/`, create an analyst and load the model results (see [Database → Set up your own project](#set-up-your-own-project)).
 7. **Start the dashboard:** `cd web && npm install && npm run dev`, then open http://localhost:5180 (see [Dashboard](#dashboard)).
-8. **Start the stream:** `python -m simulator` in a second terminal (see [Simulator](#simulator)).
-9. **Or run everything with Docker Compose** *(Phase 7)*.
+8. **Start the stream:** `python -m simulator` in a second terminal (see [Simulator](#simulator)), or click **Start demo stream** in the dashboard.
+9. **Run the tests:** `pytest` (integration tests skip without Supabase credentials; `pytest -m integration` runs only them) and `cd web && npm test`.
+
+## Deployment
+
+The API runs as a Docker web service on **Render**, the dashboard as a static site on **Vercel**, and both use the same **Supabase** project. Everything is on free plans; [`docs/deployment.md`](docs/deployment.md) walks through it step by step, with a smoke test and troubleshooting table. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every PR: pytest with coverage, the dashboard's lint, typecheck and tests, and a build-and-run check of the API's Docker image.
+
+## Limitations
+
+Honest caveats, so the numbers above are read the right way:
+
+- **No night hours in validation or test.** The time split puts both in the afternoon and evening of day 2 (about 13:00–24:00), so the model was never evaluated on night-time traffic, where the fraud rate is 1.0–1.7% instead of 0.1–0.2% ([EDA findings 5 and 10c](docs/eda_findings.md)). The `NIGHT_HOURS` rule is based on training data only.
+- **Anonymized features.** `V1`–`V28` are PCA components with no business meaning, so there is no feature engineering (merchant, customer history, velocity) and explanations name components ("V14 much lower than typical") rather than reasons an investigator would recognise.
+- **Small, old, short dataset.** Two days of European transactions from 2013. The test set has only 52 frauds, so the metrics have wide confidence intervals (PR-AUC 0.62–0.86), and real fraud patterns change much faster than two days can show.
+- **"Real time" is a replay.** The live feed is the held-out test period replayed through the API (or the 200-row demo slice), not real card traffic. Latency figures are from localhost; on Render's free plan, network time dominates.
+- **Step-like scores.** Isotonic calibration maps the forest's score to about 26 distinct probabilities on test, so many transactions share exactly the same score and ranking ties are common.
+- **Drift reference is in-sample.** The training scores come from the same model that was fitted on them; calibration keeps them close to held-out scores (PSI 0.02), but it is not a perfectly clean baseline. PSI needs at least 500 live scores.
+- **Feedback isn't used for retraining yet.** Analyst verdicts are stored in `feedback`, but there is no retraining loop.
+- **Single-instance API.** `/metrics`, the demo-stream lock and its rate limits live in memory, so the API runs one worker; numbers reset on restart. The free plan also sleeps after 15 minutes idle (about a minute to wake), and free Supabase projects pause after a week without activity.
 
 ## Roadmap
 
@@ -686,7 +746,7 @@ Every page was checked with axe-core (WCAG 2.1 A/AA) in both themes, at laptop a
 - [x] Phase 4 — Supabase integration
 - [x] Phase 5 — Stream simulator
 - [x] Phase 6 — React dashboard
-- [ ] Phase 7 — Docker, CI, deployment
+- [x] Phase 7 — CI, Docker image, drift monitoring, deployment config and docs
 
 ## License
 

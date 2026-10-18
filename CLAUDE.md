@@ -8,18 +8,19 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
 
 ## Current status
 
-- **Phase:** 6 — React dashboard ✅ complete (2026-10-18; branch `phase-6-dashboard` pushed, user opens the PR and merges on GitHub)
-- **Last completed:** Phase 6 — `web/` (React 19, TS, Vite 8, Tailwind v4, React Router 7, Recharts; dev server **port 5180**, strictPort, because 5173 is used by another project). Pages: `/` public landing (animated *sample* scoring stream, pipeline, real test results), `/login`, `/app` live feed (Realtime, cap 200, pause/resume, KPIs), `/app/alerts` (filters in URL, centred detail dialog with SHAP bars from `/explain/{id}` + Confirm fraud / False alarm), `/app/model` (model_runs metrics + CIs, comparison, Phase 2 PNGs in `web/public/figures`, live /health + /metrics every 5 s). Top navigation (user asked for top nav, centred dialogs, colourful + animated UI). API: `CORS_ORIGINS` (default `http://localhost:5180`). Review order: guarded status update (`status = 'open'`) then `feedback` insert; retry re-sends only feedback. 218 web tests (Vitest + RTL, fake Supabase client in `src/test/fakeSupabase.ts`), 302 pytest (12 integration). axe-core WCAG 2.1 AA clean on every page, both themes, 1280 + 375 px.
+- **Phase:** 7 — Production ✅ complete (2026-10-18; all 7 phases done). Five steps, one issue + branch + PR each (issues #8–#12, PRs #13–#16 + this one); user opens and merges every PR.
+- **Last completed:** Phase 7 — CI (`.github/workflows/ci.yml`: pytest non-integration + coverage, web lint/typecheck/Vitest + coverage, Docker build + /health + /predict smoke; Codecov, informational only); MIT LICENSE + badges; `Dockerfile` (2-stage slim, `requirements-api.txt`, `xgboost-cpu`, non-root uid 10001, `PORT`-aware, single worker) + `render.yaml` (free Docker, buildFilter) — Docker is **not installed** on the Mac, CI builds the image; `POST/GET /demo/stream` (`api/demo.py`: 200 unlabelled test rows `api/assets/demo_rows.csv.gz` from `scripts/make_demo_rows.py`, offset 9740, 4 frauds; 10/s; 409 one-at-a-time; 429 + Retry-After: 60 s per analyst, 12/h global; token checked via Supabase Auth `/auth/v1/user`); dashboard: `web/vercel.json` (SPA rewrite), `ApiStatusProvider` + "API is waking up (free tier, ~1 min)" banner, Start demo stream button, wake ping at load; drift: `ml/drift.py` (6 risk-band bins, PSI, OK <0.1 / Watch / Alert ≥0.25), `ml/artifacts/score_distribution.json` from `scripts/make_score_distribution.py` (train split, in-sample; version-checked), `GET /drift` (latest 1,000 scores of the served version, analyst JWT, "Not enough data" < 500), Score drift section on Model & System; `docs/deployment.md`, final README (live-demo placeholders, screenshots in `docs/screenshots/`, architecture, limitations). 376 pytest (15 integration), 98% coverage; 308 web tests.
+- Phase 6 (for reference): `web/` (React 19, TS, Vite 8, Tailwind v4, React Router 7, Recharts; dev server **port 5180**, strictPort, because 5173 is used by another project). Pages: `/` public landing (animated *sample* scoring stream, pipeline, real test results), `/login`, `/app` live feed (Realtime, cap 200, pause/resume, KPIs), `/app/alerts` (filters in URL, centred detail dialog with SHAP bars from `/explain/{id}` + Confirm fraud / False alarm), `/app/model` (model_runs metrics + CIs, comparison, Phase 2 PNGs in `web/public/figures`, live /health + /metrics every 5 s). Top navigation (user asked for top nav, centred dialogs, colourful + animated UI). API: `CORS_ORIGINS` (default `http://localhost:5180`). Review order: guarded status update (`status = 'open'`) then `feedback` insert; retry re-sends only feedback. 218 web tests (Vitest + RTL, fake Supabase client in `src/test/fakeSupabase.ts`), 302 pytest (12 integration). axe-core WCAG 2.1 AA clean on every page, both themes, 1280 + 375 px.
 - Phase 5 (for reference): `simulator/` (`python -m simulator`; exit codes 0/3/130), `scripts/reset_demo_data.py`. Fraud-rich windows: test offsets 9550–9750.
 - **Demo data in Supabase:** 300 transactions (Phase 5 E2E), alerts #87 (confirmed fraud by the user via the dashboard, 2026-10-18) and #88 (open). **The user also uses the dashboard while Claude works** — before reverting any data change, check who made it (Supabase edge logs show the user agent; Claude's screenshots use HeadlessChrome).
 - Phase 4 (for reference): Supabase project `vdgitnbugzxcdneedsby`; migrations in `supabase/migrations/`; alert trigger (MEDIUM/HIGH), review-stamp trigger, Realtime on transactions/alerts; API background writes, `GET /explain/{id}` with caller's JWT; `scripts/load_model_runs.py`.
 - Phase 3 (for reference): FastAPI `/health`, `/predict`, `/predict/batch`, `/explain`, `/metrics`; `/predict` p50 6.6 ms storage off.
 - Phase 2 (for reference): Random Forest + class weights, isotonic-calibrated; test PR-AUC 0.744, precision 0.812, recall 0.750, cost saved $3,556 of $6,169 (`docs/model_results.md`).
-- **Next step:** Phase 7 — Production (Docker, CI, drift check, deploy, final README with screenshots)
+- **Next step:** user deploys (Supabase → Render → Vercel, `docs/deployment.md`), then replace the README's live-demo placeholders with the real URLs
 - **Open questions / blockers:** none
 - **Notes:**
   - Using Python 3.13 (3.11 not installed; user chose 3.13).
-  - `tests/test_setup.py::test_dataset_exists` will fail in CI where the dataset is absent — handle in Phase 7 (e.g. mark as a data test).
+  - Dataset tests (`tests/test_setup.py`) skip the whole module when `data/creditcard.csv` is absent (CI).
   - `.mcp.json` (Supabase MCP config, user-added) is gitignored.
   - Split boundaries live in `ml/config.py` (`SPLIT_BOUNDARIES`); val/test have no night hours (`docs/eda_findings.md` #10c).
   - Notebook is generated by a throwaway nbformat script; edit the `.ipynb` directly from now on.
@@ -34,6 +35,10 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
   - Phase 5 notes: per-row stats (bands, frauds) vs per-request stats (latency, retries, errors_by_kind) differ only with `--batch`. Fraud-rich demo windows: 300-row windows with 4–5 frauds start around test offsets 9550–9750 (max 5 in any 300-row window). Tests use a fake clock (`FakeTime`) and `httpx.MockTransport`; no server or dataset needed. Real-API checks this phase ran with storage off (`SUPABASE_URL=`) except the one E2E run.
   - Accuracy is shown on the model page and landing (user asked, 2026-10-18) but always next to the flag-nothing baseline (99.95% vs 99.88% on test) and never as the headline. Login page is a single centred card; feature blurbs live on the landing page.
   - Phase 6 notes: `web/.env` holds only VITE_ public values (publishable key); `web/tests/no-secrets.test.ts` fails if a secret/service-role key appears in `web/`. Realtime needs the analyst JWT (supabase-js sets it). Light-mode "tone" colours are AA as text; risk colours stay reserved for risk. Accessibility audit used axe-core (dev dep) in headless Chrome. README "Dashboard" has a screenshots placeholder for Phase 7. CI (Phase 7) should run `npm ci && npm run lint && npm run typecheck && npm test && npm run build` in `web/`.
+  - Phase 7 decisions (user): Codecov for the coverage badge; committed label-free demo slice (not a dataset download on Render); **no Docker Compose** (dropped 2026-10-18: Supabase is hosted, Render + Vercel cover deployment). Drift window/min rows chosen by replaying the test period: 1,000-row windows never reached Alert, Watch 4.8%.
+  - Retraining checklist: `python -m ml.train` → `python scripts/make_score_distribution.py` (API ignores a drift reference for another model version) → `python scripts/load_model_runs.py`.
+  - `web/` has untracked macOS duplicate files (`* 2.tsx`, `index 2.css`, `eslint.config 2.js`): old Phase 6 copies, not the user's work-in-progress as far as known. Never `git add -A` / `git add web/`; add files by name.
+  - Browser checks: headless Chrome (`/Applications/Google Chrome.app`) driven over CDP with Node's built-in WebSocket (no Playwright installed); sign in by writing the Supabase session to localStorage key `sb-<ref>-auth-token`. Use API port 8010 (the user often runs their own API on 8000).
   - Integration tests: `pytest -m integration` (marker in `pytest.ini`); they hit the real project and delete their rows. Running the benchmark with storage on writes real rows; delete them afterwards (or run with `SUPABASE_URL=` to disable storage).
 
 > Update this section at the end of every phase.
@@ -71,7 +76,7 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
 | API | FastAPI, pytest |
 | Frontend | React, Vite, TypeScript, Tailwind, Recharts |
 | Data / Auth | Supabase (Postgres, Realtime, Auth, Row Level Security) |
-| Ops | Docker Compose, GitHub Actions, Render (API), Vercel (web) |
+| Ops | Docker, GitHub Actions, Codecov, Render (API), Vercel (web) |
 
 ## Folder structure
 
@@ -120,7 +125,7 @@ docs/        # extra documentation, screenshots
 - Analyst login
 
 ### Production
-- pytest tests, Docker Compose, GitHub Actions CI
+- pytest tests, Docker image for the API, GitHub Actions CI
 - Drift check (live score distribution vs. training distribution)
 - Deploy API to Render, web to Vercel
 
@@ -179,11 +184,11 @@ docs/        # extra documentation, screenshots
 - [x] Transaction detail with SHAP bars
 
 ### Phase 7 — Production
-- [ ] Dockerfiles + Docker Compose
-- [ ] GitHub Actions CI (lint + tests)
-- [ ] Drift check (live vs. training score distribution)
-- [ ] Deploy API (Render) + web (Vercel)
-- [ ] Final README with real metrics, screenshots, live links
+- [x] Dockerfile for the API (Docker Compose dropped by the user, 2026-10-18)
+- [x] GitHub Actions CI (lint + tests + coverage + Docker image smoke test)
+- [x] Drift check (live vs. training score distribution)
+- [x] Deploy config for API (Render) + web (Vercel), with `docs/deployment.md` (the deploy itself is done by the user)
+- [x] Final README with real metrics, screenshots, limitations (live links are placeholders until the user deploys)
 
 ## End-of-phase routine
 
