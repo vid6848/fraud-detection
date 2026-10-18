@@ -10,6 +10,17 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: { port: PORT, strictPort: true },
   preview: { port: PORT, strictPort: true },
+  build: {
+    rollupOptions: {
+      output: {
+        // Long-lived vendor chunks: cached across deploys of our own code.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/@supabase')) return 'supabase'
+          if (/node_modules\/(react|react-dom|react-router|scheduler)\//.test(id)) return 'react'
+        },
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],

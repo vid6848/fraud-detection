@@ -23,6 +23,8 @@
   --high: #c21f1f;
   --high-soft: #fdecec;
   --focus: #4f46e5;
+  --shap-up: #c21f1f;
+  --shap-down: #2563eb;
 }
 
 .dark {
@@ -42,6 +44,8 @@
   --high: #f87171;
   --high-soft: #331616;
   --focus: #8b93ff;
+  --shap-up: #ef4444;
+  --shap-down: #3b82f6;
 }
 
 @theme inline {
@@ -60,10 +64,14 @@
   --color-medium-soft: var(--medium-soft);
   --color-high: var(--high);
   --color-high-soft: var(--high-soft);
+  --color-shap-up: var(--shap-up);
+  --color-shap-down: var(--shap-down);
   --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --animate-row-in: row-in 1.6s ease-out;
   --animate-tape-in: tape-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-panel-in: panel-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-toast-in: chip-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-chip-in: chip-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -110,4 +118,10 @@ body {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Detail panel slides in from the right (bottom sheet on phones is full screen). */
+@keyframes panel-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }

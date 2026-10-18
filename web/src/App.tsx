@@ -1,12 +1,17 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthProvider'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
+import { FullPageSpinner } from './components/StateViews'
 import { Landing } from './pages/Landing'
-import { LiveFeed } from './pages/LiveFeed'
 import { Login } from './pages/Login'
 import { NotFound } from './pages/NotFound'
 import { Placeholder } from './pages/Placeholder'
+
+// Dashboard pages load on demand, so the landing and login pages stay small.
+const LiveFeed = lazy(() => import('./pages/LiveFeed').then((m) => ({ default: m.LiveFeed })))
+const Alerts = lazy(() => import('./pages/Alerts').then((m) => ({ default: m.Alerts })))
 
 export function AppRoutes() {
   return (
@@ -16,7 +21,7 @@ export function AppRoutes() {
       <Route path="/app" element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route index element={<LiveFeed />} />
-          <Route path="alerts" element={<Placeholder title="Alerts" description="Review flagged transactions." />} />
+          <Route path="alerts" element={<Alerts />} />
           <Route path="model" element={<Placeholder title="Model & system" description="Model quality and API health." />} />
           <Route path="*" element={<NotFound />} />
         </Route>
@@ -30,7 +35,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <Suspense fallback={<FullPageSpinner label="Loading…" />}>
+          <AppRoutes />
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   )
