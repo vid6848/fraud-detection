@@ -1,0 +1,8 @@
+# Allow-list: the image needs only the API, the ml package and the saved model.
+*
+!requirements-api.txt
+!api/
+!ml/*.py
+!ml/artifacts/model.joblib
+!ml/artifacts/metadata.json
+**/__pycache__

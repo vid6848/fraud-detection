@@ -1,0 +1,23 @@
+# Runtime dependencies of the API only (used by the Dockerfile).
+# Versions match requirements.txt (tests/test_deploy_files.py checks this).
+
+# Model: the pickled pipeline imports ml.models / ml.explain, which need all of these
+pandas==3.0.6
+numpy==2.5.3
+scikit-learn==1.9.1
+# CPU-only build of xgboost: same `xgboost` module, without ~200 MB of CUDA libraries
+xgboost-cpu==3.4.1
+imbalanced-learn==0.14.2
+shap==0.52.0
+joblib==1.6.0
+matplotlib==3.11.2
+
+# API
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.0
+python-dotenv==1.2.4
+httpx==0.28.1
+
+# Database: only the PostgREST client from the supabase package is used
+postgrest==2.32.0

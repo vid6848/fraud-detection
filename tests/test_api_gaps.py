@@ -58,8 +58,9 @@ def test_openapi_lists_every_endpoint():
         paths = client.get("/openapi.json").json()["paths"]
         assert client.get("/docs").status_code == 200
     assert set(paths) == {"/health", "/predict", "/predict/batch", "/explain",
-                          "/explain/{transaction_id}", "/metrics"}
+                          "/explain/{transaction_id}", "/metrics", "/demo/stream"}
     assert set(paths["/predict"]) == {"post"}
+    assert set(paths["/demo/stream"]) == {"get", "post"}
 
 
 def test_configure_logging_twice_does_not_duplicate_lines():

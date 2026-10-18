@@ -157,7 +157,30 @@ class MetricsResponse(BaseModel):
     errors: ErrorCounts
     latency_ms: Latency
     risk_levels: dict[RiskLevel, int] = Field(
-        description="Scored transactions per level (/predict and /predict/batch)"
+        description="Scored transactions per level (/predict, /predict/batch, demo stream)"
     )
     storage: StorageCounts
     scope: str
+
+
+class DemoStreamRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    limit: int | None = Field(default=None, ge=1,
+                              description="Rows to replay (default and maximum: max_rows)")
+
+
+class DemoRunInfo(BaseModel):
+    id: str
+    state: Literal["running", "completed", "failed", "cancelled"]
+    total: int = Field(description="Rows this run will send")
+    sent: int = Field(description="Rows scored and saved so far")
+    failed: int = Field(description="Rows that could not be scored or saved")
+    rate_per_s: float
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class DemoStreamStatus(BaseModel):
+    running: bool
+    max_rows: int
+    run: DemoRunInfo | None = Field(description="The current or most recent run")

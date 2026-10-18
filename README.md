@@ -75,6 +75,7 @@ flowchart LR
 ├── ml/            # EDA notebook and training pipeline
 │   └── artifacts/ # trained model, threshold, metrics, PR curves
 ├── api/           # FastAPI scoring service
+│   └── assets/    # 200 unlabelled test rows for POST /demo/stream
 ├── simulator/     # real-time transaction stream replayer
 ├── web/           # React analyst dashboard
 ├── supabase/      # SQL migrations
@@ -125,7 +126,14 @@ uvicorn api.main:app --no-access-log          # add --reload while developing
 # interactive docs: http://localhost:8000/docs
 ```
 
-`--no-access-log` turns off uvicorn's plain-text access lines; the API writes its own structured JSON line for every request (see [Logging](#logging)). Settings come from `.env` (see `.env.example`): `MODEL_PATH`, `METADATA_PATH`, `MEDIUM_THRESHOLD` (default 0.05), `MAX_BATCH_SIZE` (default 1000), `LOG_LEVEL`, and for storage `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `STORAGE_TIMEOUT_S` (default 5).
+`--no-access-log` turns off uvicorn's plain-text access lines; the API writes its own structured JSON line for every request (see [Logging](#logging)). Settings come from `.env` (see `.env.example`): `MODEL_PATH`, `METADATA_PATH`, `MEDIUM_THRESHOLD` (default 0.05), `MAX_BATCH_SIZE` (default 1000), `LOG_LEVEL`, and for storage `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `STORAGE_TIMEOUT_S` (default 5), `CORS_ORIGINS`, and the `DEMO_*` limits for the demo stream.
+
+Or with Docker, as it runs on Render (a slim image with only the API's runtime dependencies from [`requirements-api.txt`](requirements-api.txt), running as a non-root user; `PORT` is read from the environment):
+
+```bash
+docker build -t fraud-api .
+docker run -p 8000:8000 --env-file .env fraud-api
+```
 
 | Method | Path | What it does |
 |---|---|---|
@@ -135,6 +143,8 @@ uvicorn api.main:app --no-access-log          # add --reload while developing
 | POST | `/explain` | Score + top 5 SHAP feature contributions in plain words |
 | GET | `/explain/{id}` | Same explanation for a **stored** transaction; needs an analyst login token |
 | GET | `/metrics` | Request counts, p50/p95/p99 latency, errors, risk-level counts, uptime |
+| POST | `/demo/stream` | Analysts only: replay up to 200 held-out test rows server-side at ~10/s (for the deployed demo) |
+| GET | `/demo/stream` | Progress of the current or last demo stream |
 
 A transaction is one row of `creditcard.csv` without `Class`: `Time`, `V1`–`V28`, `Amount` (all numbers; `Time` and `Amount` ≥ 0; unknown fields are rejected). The examples below use [`docs/examples/transaction.json`](docs/examples/transaction.json), a real fraud from the validation period.
 
@@ -283,7 +293,33 @@ curl localhost:8000/metrics
   "scope": "in-memory, per worker process, reset on restart"
 }
 ```
-Latency percentiles cover the most recent 10,000 requests. `risk_levels` counts transactions scored by `/predict` and `/predict/batch` (not `/explain` or `/explain/{id}`). `storage` counts background inserts (one per request) and the rows in them; a non-zero `writes_failed` means scored transactions were not saved. These numbers live in memory: they reset on restart, and each uvicorn worker reports its own.
+Latency percentiles cover the most recent 10,000 requests. `risk_levels` counts transactions scored by `/predict`, `/predict/batch` and the demo stream (not `/explain` or `/explain/{id}`). `storage` counts background inserts (one per request) and the rows in them; a non-zero `writes_failed` means scored transactions were not saved. These numbers live in memory: they reset on restart, and each uvicorn worker reports its own.
+
+**`POST /demo/stream`** *(analysts only)*
+
+The deployed demo has no simulator running, so a logged-in analyst can start a short stream from the dashboard. The API replays [`api/assets/demo_rows.csv.gz`](api/assets/demo_rows.csv.gz): 200 consecutive rows of the held-out **test** split (4 of them fraud, starting at test offset 9740), **without** the `Class` column, made by `python scripts/make_demo_rows.py`. Each row is scored and saved exactly like a `/predict` call, so it appears in the live feed and MEDIUM/HIGH rows raise alerts.
+
+```bash
+curl -X POST localhost:8000/demo/stream \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{"limit": 50}'    # body optional; default 200
+```
+```json
+{"running": true, "max_rows": 200,
+ "run": {"id": "9f0c...", "state": "running", "total": 50, "sent": 0, "failed": 0,
+         "rate_per_s": 10.0, "started_at": "2026-10-18T09:40:00+00:00", "finished_at": null}}
+```
+Returns 202 at once; `GET /demo/stream` shows progress (`state`: `running`, `completed`, `failed` after 5 failed rows in a row, `cancelled` on shutdown). Guard rails, since it writes to the shared database:
+
+| Rule | Response | Setting (default) |
+|---|---|---|
+| Login token checked with Supabase Auth | 401 if missing or invalid | |
+| One stream at a time | 409 | |
+| Each analyst once per minute | 429 + `Retry-After` | `DEMO_COOLDOWN_S` (60) |
+| All analysts together per rolling hour | 429 + `Retry-After` | `DEMO_MAX_PER_HOUR` (12) |
+| Rows per stream, speed | 422 if `limit` < 1; larger values are capped | `DEMO_MAX_ROWS` (200), `DEMO_RATE_PER_S` (10) |
+
+Without storage configured it returns 503. The lock and limits are in memory, which is why the API runs as a single worker.
 
 ### Errors
 
@@ -300,10 +336,12 @@ Every error has the same shape, and `request_id` matches the `X-Request-ID` resp
 | Status | `code` | When |
 |---|---|---|
 | 422 | `validation_error` | Missing/extra field, wrong type, negative amount, NaN, malformed JSON, batch empty or over 1,000. `details` names each bad field but never echoes the submitted values. |
-| 401 | `unauthorized` | `GET /explain/{id}` without a valid analyst token |
+| 401 | `unauthorized` | `GET /explain/{id}` or `POST /demo/stream` without a valid analyst token |
 | 404 | `not_found` | Unknown path, or a stored transaction that doesn't exist |
 | 405 | `method_not_allowed` | e.g. `GET /predict` |
-| 503 | `service_unavailable` | Model not loaded yet, or (for `GET /explain/{id}`) storage off or unreachable |
+| 409 | `conflict` | `POST /demo/stream` while a demo stream is running |
+| 429 | `rate_limited` | `POST /demo/stream` started too recently; wait `Retry-After` seconds |
+| 503 | `service_unavailable` | Model not loaded yet, or (for `GET /explain/{id}` and `/demo/stream`) storage off or unreachable |
 | 500 | `internal_error` | Unexpected bug: the client only gets "Internal server error"; the stack trace goes to the server log under the same request ID |
 
 ### Logging

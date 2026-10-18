@@ -1,0 +1,30 @@
+# Render Blueprint: the FastAPI service on the free plan (it sleeps when idle).
+# Render -> New -> Blueprint -> pick this repo; fill in the secret values when asked.
+services:
+  - type: web
+    name: fraud-detection-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    # Rebuild only when something in the image changes (not for docs or web/).
+    buildFilter:
+      paths:
+        - api/**
+        - ml/*.py
+        - ml/artifacts/model.joblib
+        - ml/artifacts/metadata.json
+        - Dockerfile
+        - requirements-api.txt
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # The deployed dashboard, e.g. https://your-app.vercel.app (comma-separate several)
+      - key: CORS_ORIGINS
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO

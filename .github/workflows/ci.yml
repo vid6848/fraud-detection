@@ -61,3 +61,29 @@ jobs:
           files: web/coverage/lcov.info
           flags: web
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  docker:
+    name: API Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t fraud-api .
+      - name: Image size and user
+        run: |
+          docker image ls fraud-api --format '{{.Size}}'
+          test "$(docker run --rm fraud-api id -u)" != "0"
+      # Same as Render: PORT is set by the platform, no Supabase (storage off).
+      - name: Start and check /health
+        run: |
+          docker run -d --name api -e PORT=10000 -p 10000:10000 fraud-api
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:10000/health; then echo; break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:10000/health | grep -q '"model_loaded":true'
+          curl -fsS -X POST http://localhost:10000/predict \
+            -H 'Content-Type: application/json' -d @docs/examples/transaction.json
+      - name: Container logs
+        if: always()
+        run: docker logs api || true

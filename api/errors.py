@@ -15,7 +15,9 @@ ERROR_CODES = {
     401: "unauthorized",
     404: "not_found",
     405: "method_not_allowed",
+    409: "conflict",
     422: "validation_error",
+    429: "rate_limited",
     500: "internal_error",
     503: "service_unavailable",
 }
@@ -53,6 +55,6 @@ def register_error_handlers(app: FastAPI) -> None:
     async def on_http_error(request: Request, exc: StarletteHTTPException):
         message = exc.detail if isinstance(exc.detail, str) else HTTPStatus(exc.status_code).phrase
         response = error_response(request, exc.status_code, message)
-        for key, value in (exc.headers or {}).items():  # e.g. Allow on a 405
+        for key, value in (exc.headers or {}).items():  # e.g. Allow on a 405, Retry-After on a 429
             response.headers[key] = value
         return response
