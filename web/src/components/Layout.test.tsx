@@ -1,7 +1,8 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeApi, HEALTHY, json } from '../test/fakeApi'
 import { createFakeSupabase } from '../test/fakeSupabase'
 import { fakeSession, renderWithProviders } from '../test/render'
 import { Layout } from './Layout'
@@ -26,6 +27,25 @@ function renderAt(route: string, auth = {}) {
 const mainNav = () => screen.getAllByRole('navigation', { name: 'Main' })[0]!
 
 describe('Layout', () => {
+  beforeEach(() => { vi.stubGlobal('fetch', fakeApi({ 'GET /health': () => json(200, HEALTHY) })) })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows no API banner while the API is healthy', async () => {
+    fake = createFakeSupabase({ alerts: { count: 0 } })
+    renderAt('/app')
+    expect(await screen.findByText('feed page')).toBeInTheDocument()
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalled())
+    expect(screen.queryByText(/API is waking up|Can’t reach the API/)).not.toBeInTheDocument()
+  })
+
+  it('shows the API banner when /health fails', async () => {
+    vi.stubGlobal('fetch', fakeApi({}))
+    fake = createFakeSupabase({ alerts: { count: 0 } })
+    renderAt('/app')
+    // Waking (deployed API) or down at once (local API), depending on VITE_API_URL.
+    expect(await screen.findByText(/API is waking up \(free tier, ~1 min\)|Can’t reach the API/)).toBeInTheDocument()
+  })
+
   it('shows the three sections in the top navigation and marks the current one', async () => {
     fake = createFakeSupabase({ alerts: { count: 0 } })
     renderAt('/app/alerts')

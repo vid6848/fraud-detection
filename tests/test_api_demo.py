@@ -357,6 +357,17 @@ def test_demo_stream_is_rate_limited_per_analyst():
     assert 1 <= int(response.headers["Retry-After"]) <= 60
 
 
+def test_the_dashboard_can_read_retry_after_on_a_429():
+    origin = {"Origin": "http://localhost:5180"}
+    with demo_client(AuthStore()) as client:
+        client.post("/demo/stream", headers=AUTH)
+        wait_until_done(client)
+        response = client.post("/demo/stream", headers={**AUTH, **origin})
+    assert response.status_code == 429
+    exposed = response.headers["access-control-expose-headers"].lower()
+    assert "retry-after" in exposed and response.headers["Retry-After"]
+
+
 def test_shutdown_cancels_a_running_demo_stream():
     store = AuthStore()
     with demo_client(store, demo_rate_per_s=0.5) as client:  # one row, then a 2 s wait

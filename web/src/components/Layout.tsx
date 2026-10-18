@@ -1,10 +1,12 @@
 import { Activity, BarChart3, ChevronDown, LogOut, ShieldAlert } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { ApiStatusProvider } from '../apiStatus/ApiStatusProvider'
 import { useAuth } from '../auth/context'
 import { useOpenAlertCount } from '../hooks/useOpenAlertCount'
 import { ToastProvider } from '../toast/ToastProvider'
 import { AlertNotifier } from './AlertNotifier'
+import { ApiWakeBanner } from './ApiWakeBanner'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -117,26 +119,29 @@ export function Layout() {
 
   return (
     <ToastProvider>
-      <AlertNotifier />
-      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2">
-        Skip to content
-      </a>
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-bg/70 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
-          <Link to="/" aria-label="Fraud Watch home" className="shrink-0 rounded-lg"><Logo /></Link>
-          <div className="hidden flex-1 justify-center md:flex"><NavTabs openAlerts={openAlerts} /></div>
-          <div className="ml-auto flex items-center gap-2 md:ml-0">
-            <ThemeToggle />
-            <AccountMenu />
+      <ApiStatusProvider>
+        <AlertNotifier />
+        <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2">
+          Skip to content
+        </a>
+        <header className="sticky top-0 z-40 border-b border-border/70 bg-bg/70 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
+            <Link to="/" aria-label="Fraud Watch home" className="shrink-0 rounded-lg"><Logo /></Link>
+            <div className="hidden flex-1 justify-center md:flex"><NavTabs openAlerts={openAlerts} /></div>
+            <div className="ml-auto flex items-center gap-2 md:ml-0">
+              <ThemeToggle />
+              <AccountMenu />
+            </div>
           </div>
-        </div>
-        <div className="px-4 pb-3 md:hidden"><NavTabs openAlerts={openAlerts} /></div>
-        <div aria-hidden className="flow-line h-px animate-flow opacity-70" />
-      </header>
+          <div className="px-4 pb-3 md:hidden"><NavTabs openAlerts={openAlerts} /></div>
+          <div aria-hidden className="flow-line h-px animate-flow opacity-70" />
+        </header>
 
-      <main id="main" tabIndex={-1} className="mx-auto min-w-0 max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div key={pathname} className="animate-page-in"><Outlet /></div>
-      </main>
+        <main id="main" tabIndex={-1} className="mx-auto min-w-0 max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <ApiWakeBanner />
+          <div key={pathname} className="animate-page-in"><Outlet /></div>
+        </main>
+      </ApiStatusProvider>
     </ToastProvider>
   )
 }

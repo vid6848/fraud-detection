@@ -2,9 +2,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './index.css'
+import { wakeApi } from './lib/api'
 import { env } from './lib/env'
 import { ConfigMissing } from './pages/ConfigMissing'
 import { ThemeProvider } from './theme/ThemeProvider'
+
+wakeApi()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
