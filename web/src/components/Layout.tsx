@@ -1,14 +1,14 @@
 import { Activity, BarChart3, LogOut, Menu, ShieldAlert, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Live feed', icon: Activity },
-  { to: '/alerts', label: 'Alerts', icon: ShieldAlert },
-  { to: '/model', label: 'Model & system', icon: BarChart3 },
+  { to: '/app', label: 'Live feed', icon: Activity },
+  { to: '/app/alerts', label: 'Alerts', icon: ShieldAlert },
+  { to: '/app/model', label: 'Model & system', icon: BarChart3 },
 ] as const
 
 function NavItems({ onNavigate }: { onNavigate?: () => void }) {
@@ -16,7 +16,7 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
     <ul className="space-y-1">
       {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
         <li key={to}>
-          <NavLink to={to} end={to === '/'} onClick={onNavigate}
+          <NavLink to={to} end={to === '/app'} onClick={onNavigate}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 isActive ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-surface-2 hover:text-fg'}`}>
@@ -77,7 +77,7 @@ export function Layout() {
 
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-border bg-surface px-4 py-5 md:flex">
-        <div className="mb-8 px-1"><Logo /></div>
+        <Link to="/" className="mb-8 block rounded-lg px-1" aria-label="Fraud Watch home"><Logo /></Link>
         <nav aria-label="Main" className="flex-1"><NavItems /></nav>
         <AccountBox />
       </aside>

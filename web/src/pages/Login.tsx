@@ -1,12 +1,18 @@
-import { Loader2 } from 'lucide-react'
+import { ArrowLeft, BrainCircuit, Loader2, Radio, ShieldAlert } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
 
 const inputClass =
   'mt-1.5 block w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm placeholder:text-muted/70 focus:border-accent'
+
+const FEATURES = [
+  { icon: Radio, title: 'Live feed', body: 'Transactions appear the moment the API scores them.' },
+  { icon: ShieldAlert, title: 'Alert queue', body: 'Medium and High scores wait here for your review.' },
+  { icon: BrainCircuit, title: 'Reasons for every score', body: 'See which features pushed the risk up or down.' },
+]
 
 export function Login() {
   const { session, signIn } = useAuth()
@@ -16,7 +22,7 @@ export function Login() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  const from = (location.state as { from?: string } | null)?.from ?? '/'
+  const from = (location.state as { from?: string } | null)?.from ?? '/app'
   if (session) return <Navigate to={from} replace />
 
   async function onSubmit(e: FormEvent) {
@@ -29,15 +35,41 @@ export function Login() {
   }
 
   return (
-    <div className="relative grid min-h-dvh place-items-center px-4 py-10">
-      <div className="absolute right-4 top-4"><ThemeToggle /></div>
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex justify-center"><Logo /></div>
-        <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm sm:p-8">
-          <h1 className="text-xl font-semibold tracking-tight">Analyst sign in</h1>
-          <p className="mt-1 text-sm text-muted">Review live transactions and fraud alerts.</p>
+    <div className="grid min-h-dvh lg:grid-cols-[1fr_1.1fr]">
+      {/* Brand panel (desktop only) */}
+      <aside className="relative hidden flex-col justify-between overflow-hidden border-r border-border bg-surface p-10 lg:flex">
+        <Link to="/" aria-label="Fraud Watch home" className="w-fit rounded-lg"><Logo /></Link>
+        <div className="max-w-md">
+          <h2 className="text-4xl font-semibold leading-[1.1] tracking-[-0.03em] [font-stretch:88%]">
+            The model flags it. You make the call.
+          </h2>
+          <ul className="mt-8 space-y-5">
+            {FEATURES.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="flex gap-4">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+                  <Icon aria-hidden className="size-4.5" />
+                </span>
+                <div>
+                  <p className="font-medium">{title}</p>
+                  <p className="mt-0.5 text-sm text-muted">{body}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-xs text-muted">Scores come from a Random Forest trained on 284,807 card transactions.</p>
+      </aside>
 
-          <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
+      <div className="relative grid place-items-center px-4 py-10">
+        <div className="absolute right-4 top-4"><ThemeToggle /></div>
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex justify-center lg:hidden">
+            <Link to="/" aria-label="Fraud Watch home" className="rounded-lg"><Logo /></Link>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">Analyst sign in</h1>
+          <p className="mt-1 text-sm text-muted">Use the account your administrator gave you.</p>
+
+          <form onSubmit={onSubmit} className="mt-8 space-y-4" noValidate>
             <div>
               <label htmlFor="email" className="text-sm font-medium">Email</label>
               <input id="email" type="email" autoComplete="username" required value={email}
@@ -61,10 +93,13 @@ export function Login() {
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          <p className="mt-6 text-xs text-muted">
+            Accounts are created by an administrator. Public sign-up is turned off.
+          </p>
+          <Link to="/" className="mt-8 inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg">
+            <ArrowLeft aria-hidden className="size-4" /> Back to the home page
+          </Link>
         </div>
-        <p className="mt-6 text-center text-xs text-muted">
-          Accounts are created by an administrator. Public sign-up is disabled.
-        </p>
       </div>
     </div>
   )

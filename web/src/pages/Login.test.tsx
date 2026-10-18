@@ -9,8 +9,8 @@ function renderLogin(auth = {}, route: NonNullable<Parameters<typeof renderWithP
   return renderWithProviders(
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<p>Live feed page</p>} />
-      <Route path="/alerts" element={<p>Alerts page</p>} />
+      <Route path="/app" element={<p>Live feed page</p>} />
+      <Route path="/app/alerts" element={<p>Alerts page</p>} />
     </Routes>,
     { auth, route },
   )
@@ -63,7 +63,7 @@ describe('Login', () => {
   })
 
   it('redirects a signed-in analyst back to where they were going', () => {
-    renderLogin({ session: fakeSession }, { pathname: '/login', state: { from: '/alerts' } })
+    renderLogin({ session: fakeSession }, { pathname: '/login', state: { from: '/app/alerts' } })
     expect(screen.getByText('Alerts page')).toBeInTheDocument()
   })
 
