@@ -15,6 +15,7 @@ import { label, STRATEGY_LABELS, type ModelRun } from '../lib/modelRuns'
 import { getSupabase } from '../lib/supabase'
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`
+const pct2 = (n: number) => `${(n * 100).toFixed(2)}%`
 const dec3 = (n: number) => n.toFixed(3)
 
 async function loadRuns(): Promise<ModelRun[]> {
@@ -101,6 +102,10 @@ function ModelResults({ run, runs, onVersion }: { run: ModelRun; runs: ModelRun[
   const ci = t.ci95 ?? {}
   const cm = t.confusion_matrix
   const fraudRate = m.split ? m.split.test.fraud_pct / 100 : null
+  // Accuracy from the confusion matrix, next to the "flag nothing" baseline for context.
+  const total = cm.tn + cm.fp + cm.fn + cm.tp
+  const accuracy = total ? (cm.tn + cm.tp) / total : 0
+  const baseline = total ? (cm.tn + cm.fp) / total : 0
 
   return (
     <div className="space-y-4">
@@ -134,7 +139,7 @@ function ModelResults({ run, runs, onVersion }: { run: ModelRun; runs: ModelRun[
       </div>
 
       {/* Headline metrics */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="PR-AUC" value={t.pr_auc} interval={ci.pr_auc} scale={[0, 1]} format={dec3} tone="violet"
           note={fraudRate !== null ? `Area under the precision–recall curve. Guessing would score about ${fraudRate.toFixed(4)}, the fraud rate.` : undefined} />
         <MetricCard label="Recall at 90% precision" value={t.recall_at_90_precision} interval={ci.recall_at_90_precision} scale={[0, 1]} format={pct} tone="cyan" delay={60}
@@ -150,12 +155,16 @@ function ModelResults({ run, runs, onVersion }: { run: ModelRun; runs: ModelRun[
           interval={ci.pct_fraud_dollars_caught && { low: ci.pct_fraud_dollars_caught.low / 100, high: ci.pct_fraud_dollars_caught.high / 100 }}
           scale={[0, 1]} format={pct} tone="violet" delay={300}
           note={`${formatCurrencyWhole(t.fraud_amount_caught)} of ${formatCurrencyWhole(t.total_fraud_amount)} in fraudulent charges.`} />
+        <MetricCard label="F1 score" value={t.f1} interval={ci.f1} scale={[0, 1]} format={dec3} tone="cyan" delay={360}
+          note="Balance of precision and recall (1 is perfect)." />
+        <MetricCard label="Accuracy" value={accuracy} scale={[0, 1]} format={pct2} tone="emerald" delay={420}
+          note={`${(cm.tn + cm.tp).toLocaleString()} of ${total.toLocaleString()} transactions classified correctly. Flagging nothing would already score ${pct2(baseline)}, because fraud is so rare, so PR-AUC and recall are the better guides.`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <Card title="Outcomes on the test period" icon={Scale}>
           <ConfusionMatrix cm={cm} />
-          <p className="mt-2 text-xs text-muted">At threshold {t.threshold.toFixed(3)}. Accuracy isn’t shown: flagging nothing would already be 99.9% “accurate”.</p>
+          <p className="mt-2 text-xs text-muted">At threshold {t.threshold.toFixed(3)}. Accuracy {pct2(accuracy)} (flagging nothing: {pct2(baseline)}).</p>
         </Card>
         <Card title="Model comparison" icon={BarChart3}>
           <ModelComparison metrics={m} />

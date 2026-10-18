@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { fakeSession, renderWithProviders } from '../test/render'
 import { Landing } from './Landing'
@@ -17,10 +17,20 @@ describe('Landing', () => {
 
   it('shows the pipeline in order and the real test-set results', () => {
     renderWithProviders(<Landing />)
-    const steps = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
+    const how = screen.getByRole('region', { name: 'How a transaction moves through the system' })
+    const steps = within(how).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
     expect(steps).toEqual(['1Stream', '2Score', '3Store', '4Review'])
     expect(screen.getByText('0.744')).toBeInTheDocument()
     expect(screen.getByText('$3,556')).toBeInTheDocument()
+  })
+
+  it('lists what analysts get, and shows accuracy next to its baseline', () => {
+    renderWithProviders(<Landing />)
+    const features = screen.getByRole('region', { name: 'What analysts get' })
+    expect(within(features).getAllByRole('heading', { level: 3 }).map((h) => h.textContent))
+      .toEqual(['Live feed', 'Alert queue', 'Reasons for every score', 'Model and system health'])
+    expect(screen.getByText('99.95%')).toBeInTheDocument()
+    expect(screen.getByText(/flagging nothing at all would already score 99\.88%/)).toBeInTheDocument()
   })
 
   it('labels the animated stream as sample data', () => {

@@ -17,6 +17,12 @@ function renderLogin(auth = {}, route: NonNullable<Parameters<typeof renderWithP
 }
 
 describe('Login', () => {
+  it('is just the sign-in card: one heading, no feature list', () => {
+    renderLogin()
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Analyst sign in'])
+    expect(screen.getByRole('link', { name: /back to the home page/i })).toHaveAttribute('href', '/')
+  })
+
   it('has labelled email and password fields and no sign-up link', () => {
     renderLogin()
     expect(screen.getByLabelText('Email')).toHaveAttribute('type', 'email')

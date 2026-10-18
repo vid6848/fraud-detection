@@ -29,6 +29,14 @@ describe('ModelSystem', () => {
     expect(screen.getByText('0.429')).toBeInTheDocument()
   })
 
+  it('shows accuracy computed from the confusion matrix, with the flag-nothing baseline', async () => {
+    renderPage()
+    await screen.findByText('0.744')
+    expect(screen.getByText('99.95%')).toBeInTheDocument() // (42,660 + 39) / 42,721
+    expect(screen.getByText(/42,699 of 42,721 transactions classified correctly\. Flagging nothing would already score 99\.88%/)).toBeInTheDocument()
+    expect(screen.getByText('0.780')).toBeInTheDocument() // F1
+  })
+
   it('shows outcomes, the model comparison and the data split', async () => {
     renderPage()
     await screen.findByText('0.744')

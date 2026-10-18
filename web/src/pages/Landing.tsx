@@ -1,4 +1,4 @@
-import { BrainCircuit, Database, FolderGit2, Radio, ShieldCheck, UserCheck } from 'lucide-react'
+import { BrainCircuit, Database, FolderGit2, Gauge, Radio, ShieldAlert, ShieldCheck, UserCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { ScoringPreview } from '../components/landing/ScoringPreview'
@@ -21,6 +21,16 @@ const RESULTS = [
   { value: '81%', label: 'Precision', note: '39 of 48 alerts were real fraud.' },
   { value: '75%', label: 'Recall', note: 'Three in four fraud cases caught.' },
   { value: '$3,556', label: 'Cost saved', note: 'Out of $6,169 lost with no model, after paying for reviews.' },
+  { value: '99.95%', label: 'Accuracy', note: 'Sounds great, but flagging nothing at all would already score 99.88%.' },
+  { value: '0.780', label: 'F1 score', note: 'The balance of precision and recall.' },
+]
+
+// What a signed-in analyst gets (the dashboard's three pages).
+const FEATURES = [
+  { icon: Radio, tone: 'bg-cyan/15 text-cyan', title: 'Live feed', body: 'Every transaction appears the moment the API scores it, with its fraud probability, risk level and reasons.' },
+  { icon: ShieldAlert, tone: 'bg-rose/15 text-rose', title: 'Alert queue', body: 'Medium and High scores wait for review. Confirm fraud or mark a false alarm, with a note.' },
+  { icon: BrainCircuit, tone: 'bg-violet/15 text-violet', title: 'Reasons for every score', body: 'SHAP bars show which features pushed the risk up or down for each flagged transaction.' },
+  { icon: Gauge, tone: 'bg-emerald/15 text-emerald', title: 'Model and system health', body: 'Test metrics with confidence intervals, plus live API latency, errors and uptime.' },
 ]
 
 const primaryBtn =
@@ -38,6 +48,7 @@ export function Landing() {
         <Logo />
         <nav aria-label="Site" className="flex items-center gap-2">
           <a href="#how" className="hidden rounded-lg px-3 py-2 text-sm text-muted hover:text-fg sm:inline">How it works</a>
+          <a href="#dashboard" className="hidden rounded-lg px-3 py-2 text-sm text-muted hover:text-fg md:inline">Dashboard</a>
           <a href="#results" className="hidden rounded-lg px-3 py-2 text-sm text-muted hover:text-fg sm:inline">Results</a>
           <ThemeToggle />
           <Link to={dashboard.to} className="rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium hover:bg-surface-2">
@@ -92,6 +103,23 @@ export function Landing() {
           </div>
         </section>
 
+        {/* What analysts get */}
+        <section id="dashboard" aria-labelledby="features-title" className="scroll-mt-8">
+          <div className="mx-auto max-w-6xl px-4 pt-16 sm:px-6">
+            <h2 id="features-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">What analysts get</h2>
+            <p className="mt-2 max-w-2xl text-muted">The model flags it. An analyst makes the call.</p>
+            <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {FEATURES.map(({ icon: Icon, tone, title, body }) => (
+                <li key={title} className="rounded-2xl border border-border bg-surface p-5 transition-transform duration-300 hover:-translate-y-0.5">
+                  <span className={`grid size-10 place-items-center rounded-xl ${tone}`}><Icon aria-hidden className="size-5" /></span>
+                  <h3 className="mt-4 font-semibold">{title}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted">{body}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
         {/* Results */}
         <section id="results" aria-labelledby="results-title" className="scroll-mt-8">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
@@ -100,10 +128,10 @@ export function Landing() {
                 <h2 id="results-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">Measured once, on unseen data</h2>
                 <p className="mt-3 leading-relaxed text-muted">
                   The model was tuned on earlier transactions, then tested a single time on the final period it had never seen.
-                  Accuracy isn’t reported: calling everything “not fraud” would already score 99.83%.
+                  Fraud is so rare that accuracy is almost always near 100%, so PR-AUC, precision and recall tell the real story.
                 </p>
               </div>
-              <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2">
+              <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2 xl:grid-cols-3">
                 {RESULTS.map((r) => (
                   <div key={r.label} className="bg-surface p-6">
                     <dt className="text-sm text-muted">{r.label}</dt>

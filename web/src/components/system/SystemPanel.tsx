@@ -4,6 +4,7 @@ import { usePolling } from '../../hooks/usePolling'
 import { ApiError, apiUrl } from '../../lib/api'
 import { formatCount, formatDuration, formatMs } from '../../lib/format'
 import { fetchSystem, scoringLatency, type SystemSnapshot } from '../../lib/system'
+import { CopyCommand } from '../CopyCommand'
 import { KpiCard } from '../KpiCard'
 import { ErrorState, Skeleton } from '../StateViews'
 import { LatencyChart } from './LatencyChart'
@@ -54,10 +55,13 @@ export function SystemPanel() {
       </div>
 
       {poll.error !== undefined && (
-        <ErrorState
-          title={stale ? 'Lost contact with the API' : 'Can’t reach the API'}
-          message={`${stale ? 'Showing the last values received. ' : ''}Check that uvicorn is running at ${apiUrl()}. Retrying every ${POLL_MS / 1000} s.`}
-          onRetry={poll.retry} />
+        <div className="space-y-2">
+          <ErrorState
+            title={stale ? 'Lost contact with the API' : 'Can’t reach the API'}
+            message={`${stale ? 'Showing the last values received. ' : ''}Nothing is answering at ${apiUrl()}. Start the API from the project folder, and this page reconnects by itself (it retries every ${POLL_MS / 1000} s).`}
+            onRetry={poll.retry} />
+          {!(poll.error instanceof ApiError && poll.error.status === 503) && <CopyCommand command="uvicorn api.main:app --no-access-log" />}
+        </div>
       )}
 
       {poll.loading ? <Skeleton rows={4} label="Loading API status" /> : snap && <SystemBody snap={snap} points={points} stale={stale} />}

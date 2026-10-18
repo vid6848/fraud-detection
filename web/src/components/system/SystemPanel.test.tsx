@@ -27,6 +27,7 @@ describe('SystemPanel', () => {
     render(<SystemPanel />)
     expect(await screen.findByText('API unreachable')).toBeInTheDocument()
     expect(screen.getByText('Can’t reach the API')).toBeInTheDocument()
+    expect(screen.getByText('uvicorn api.main:app --no-access-log')).toBeInTheDocument()
   })
 
   it('says when the model is not loaded (503)', async () => {
