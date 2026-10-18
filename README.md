@@ -1,5 +1,11 @@
 # Real-Time Fraud Detection & Risk Scoring
 
+[![CI](https://github.com/vid6848/fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/vid6848/fraud-detection/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/vid6848/fraud-detection/graph/badge.svg)](https://codecov.io/gh/vid6848/fraud-detection)
+![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
+![React 19](https://img.shields.io/badge/react-19-61DAFB?logo=react&logoColor=black)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 An end-to-end fraud detection system: machine-learning models trained on 284,807 real credit card transactions, served through a low-latency FastAPI service, fed by a real-time transaction stream, stored in Supabase, and monitored from a live React analyst dashboard. Every transaction gets a fraud probability, a LOW / MEDIUM / HIGH risk level, and a SHAP explanation of *why* — and analysts can review alerts and send feedback, just like in a production fraud operations team.
 
 > 🚧 **Status:** in development. Results and setup instructions will be filled in as each phase is completed.
@@ -609,3 +615,7 @@ Every page was checked with axe-core (WCAG 2.1 A/AA) in both themes, at laptop a
 - [x] Phase 5 — Stream simulator
 - [x] Phase 6 — React dashboard
 - [ ] Phase 7 — Docker, CI, deployment
+
+## License
+
+[MIT](LICENSE). The dataset is not included; it is the [Kaggle credit card fraud dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) from the ULB Machine Learning Group, under its own licence.

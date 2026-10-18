@@ -6,11 +6,14 @@ import pytest
 
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "creditcard.csv"
 
+# The dataset is gitignored, so CI never has it: skip the whole module there.
+pytestmark = pytest.mark.skipif(
+    not DATA_PATH.exists(), reason=f"Dataset not found at {DATA_PATH} (download it from Kaggle)"
+)
+
 
 @pytest.fixture(scope="module")
 def df() -> pd.DataFrame:
-    if not DATA_PATH.exists():
-        pytest.skip(f"Dataset not found at {DATA_PATH} (download it from Kaggle)")
     return pd.read_csv(DATA_PATH)
 
 
