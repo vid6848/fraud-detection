@@ -46,6 +46,8 @@ class TransactionStore(Protocol):
 
     def verify_user(self, user_token: str) -> str: ...
 
+    def recent_scores(self, user_token: str, model_version: str, limit: int) -> list[dict]: ...
+
 
 class SupabaseStore:
     def __init__(self, url: str, service_role_key: str, anon_key: str, timeout: float,
@@ -71,16 +73,17 @@ class SupabaseStore:
 
     def get(self, transaction_id: str, user_token: str) -> dict | None:
         """The stored row, or None if it doesn't exist or RLS hides it from this user."""
-        reader = self._client(self._anon_key, user_token)
-        try:
-            result = reader.from_(TABLE).select("*").eq("id", transaction_id).limit(1).execute()
-        except APIError as exc:
-            if exc.code in AUTH_ERROR_CODES:
-                raise InvalidToken(exc.message) from exc
-            raise StorageUnavailable(f"Supabase error {exc.code}") from exc
-        except httpx.HTTPError as exc:  # network errors, timeouts
-            raise StorageUnavailable(type(exc).__name__) from exc
-        return result.data[0] if result.data else None
+        query = (self._client(self._anon_key, user_token).from_(TABLE).select("*")
+                 .eq("id", transaction_id).limit(1))
+        data = _run_read(query)
+        return data[0] if data else None
+
+    def recent_scores(self, user_token: str, model_version: str, limit: int) -> list[dict]:
+        """The newest `limit` probabilities scored by `model_version`, newest first."""
+        query = (self._client(self._anon_key, user_token).from_(TABLE)
+                 .select("probability,created_at").eq("model_version", model_version)
+                 .order("created_at", desc=True).limit(limit))
+        return _run_read(query)
 
     def verify_user(self, user_token: str) -> str:
         """The id of the signed-in (non-anonymous) user behind `user_token`."""
@@ -97,6 +100,18 @@ class SupabaseStore:
         if not user.get("id") or user.get("is_anonymous"):
             raise InvalidToken("not a signed-in analyst")
         return user["id"]
+
+
+def _run_read(query) -> list[dict]:
+    """Run a read made with the caller's token, mapping failures to our two errors."""
+    try:
+        return query.execute().data
+    except APIError as exc:
+        if exc.code in AUTH_ERROR_CODES:
+            raise InvalidToken(exc.message) from exc
+        raise StorageUnavailable(f"Supabase error {exc.code}") from exc
+    except httpx.HTTPError as exc:  # network errors, timeouts
+        raise StorageUnavailable(type(exc).__name__) from exc
 
 
 def build_store(settings: Settings) -> SupabaseStore | None:

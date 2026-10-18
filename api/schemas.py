@@ -184,3 +184,32 @@ class DemoStreamStatus(BaseModel):
     running: bool
     max_rows: int
     run: DemoRunInfo | None = Field(description="The current or most recent run")
+
+
+class DriftBin(BaseModel):
+    lower: float
+    upper: float
+    reference: float = Field(description="Share of training scores in this bin")
+    live: float = Field(description="Share of the live window in this bin")
+    contribution: float = Field(description="This bin's part of the PSI")
+
+
+class DriftReference(BaseModel):
+    rows: int
+    source: str
+    model_version: str
+    created_at: datetime
+
+
+class DriftResponse(BaseModel):
+    status: Literal["OK", "Watch", "Alert", "Not enough data"]
+    psi: float | None = Field(description="Population Stability Index; null with no live rows")
+    live_rows: int = Field(description="Live scores compared (newest first, this model version)")
+    window: int = Field(description="At most this many recent scores are used")
+    min_rows: int = Field(description="Fewer live scores than this gives 'Not enough data'")
+    live_from: datetime | None
+    live_to: datetime | None
+    thresholds: dict[str, float]
+    bins: list[DriftBin]
+    reference: DriftReference
+    model_version: str

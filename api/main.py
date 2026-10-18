@@ -28,6 +28,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from api.config import Settings
 from api.demo import DemoBusy, DemoRateLimited, DemoStreamer, load_demo_rows, retry_after_header
+from api.drift import DriftUnavailable, drift_report, load_reference
 from api.errors import error_response, register_error_handlers
 from api.explanations import explain_row
 from api.logging_setup import LOGGER_NAME, configure_logging
@@ -37,6 +38,7 @@ from api.schemas import (
     BatchPredictResponse,
     DemoStreamRequest,
     DemoStreamStatus,
+    DriftResponse,
     ExplainResponse,
     HealthResponse,
     MetricsResponse,
@@ -81,6 +83,7 @@ def create_app(settings: Settings | None = None,
             logger.warning("storage disabled: set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY "
                            "and SUPABASE_ANON_KEY to save scored transactions")
         app.state.demo = _build_demo(app, settings)
+        app.state.drift_reference = _load_drift_reference(settings, app.state.store.version)
         yield
         if app.state.demo is not None:
             await app.state.demo.aclose()
@@ -101,6 +104,7 @@ def create_app(settings: Settings | None = None,
     app.state.store = None
     app.state.storage = None
     app.state.demo = None
+    app.state.drift_reference = None
     app.state.metrics = MetricsCollector()
     register_error_handlers(app)
 
@@ -334,6 +338,34 @@ def create_app(settings: Settings | None = None,
         """Progress of the current or most recent demo stream."""
         return demo.status()
 
+    @app.get("/drift", response_model=DriftResponse,
+             responses={401: {"description": "Missing or invalid analyst token"},
+                        503: {"description": "No reference distribution, or storage unavailable"}})
+    def drift(request: Request, store: ModelStore = Depends(get_store),
+              storage: TransactionStore = Depends(get_storage),
+              token: str = Depends(analyst_token)):
+        """PSI between the latest live scores and the training score distribution.
+
+        Analysts only: the live scores are read with the caller's login, so RLS applies.
+        """
+        reference = request.app.state.drift_reference
+        if reference is None:
+            raise HTTPException(status_code=503, detail="No training score distribution for "
+                                "this model (run scripts/make_score_distribution.py)")
+        settings = request.app.state.settings
+        try:
+            rows = storage.recent_scores(token, store.version, settings.drift_window)
+        except InvalidToken:
+            raise HTTPException(status_code=401, detail="Invalid or expired analyst token",
+                                headers={"WWW-Authenticate": "Bearer"}) from None
+        except StorageUnavailable as exc:
+            logger.error("storage read failed", extra={
+                "request_id": request.state.request_id, "error_type": str(exc)})
+            raise HTTPException(status_code=503,
+                                detail="Transaction storage is unavailable") from None
+        return drift_report(reference, rows, window=settings.drift_window,
+                            min_rows=settings.drift_min_rows, model_version=store.version)
+
     @app.get("/metrics", response_model=MetricsResponse)
     def metrics(request: Request):
         """Request counts, latency percentiles, errors and risk levels since startup.
@@ -375,6 +407,14 @@ def _build_demo(app: FastAPI, settings: Settings) -> DemoStreamer | None:
                         rate_per_s=settings.demo_rate_per_s, max_rows=settings.demo_max_rows,
                         cooldown_s=settings.demo_cooldown_s,
                         max_per_hour=settings.demo_max_per_hour)
+
+
+def _load_drift_reference(settings: Settings, model_version: str) -> dict | None:
+    try:
+        return load_reference(settings.score_distribution_path, model_version)
+    except DriftUnavailable as exc:
+        logger.warning("drift check disabled", extra={"error_type": str(exc)})
+        return None
 
 
 def _score_and_save_demo_row(app: FastAPI, row: dict) -> None:

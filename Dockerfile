@@ -28,7 +28,7 @@ WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
 COPY api/ api/
 COPY ml/*.py ml/
-COPY ml/artifacts/model.joblib ml/artifacts/metadata.json ml/artifacts/
+COPY ml/artifacts/model.joblib ml/artifacts/metadata.json ml/artifacts/score_distribution.json ml/artifacts/
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

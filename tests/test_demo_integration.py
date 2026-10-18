@@ -55,3 +55,15 @@ def test_demo_stream_rejects_a_fake_token(api):
     anon = require_env("SUPABASE_ANON_KEY")["SUPABASE_ANON_KEY"]
     response = api.post("/demo/stream", headers={"Authorization": f"Bearer {anon}"})
     assert response.status_code == 401  # the anon key is not a user
+
+
+def test_drift_with_the_analysts_login(api):
+    token = analyst_client().auth.get_session().access_token
+    response = api.get("/drift", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    service = client("SUPABASE_SERVICE_ROLE_KEY")
+    stored = (service.table("transactions").select("id", count="exact", head=True)
+              .eq("model_version", body["model_version"]).execute().count)
+    assert body["live_rows"] == min(stored, body["window"])
+    assert len(body["bins"]) == 6
