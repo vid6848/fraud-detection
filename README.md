@@ -27,11 +27,11 @@ An end-to-end fraud detection system: machine-learning models trained on 284,807
 - Supabase Realtime pushes new transactions and alerts to the dashboard instantly
 
 **Analyst dashboard**
-- Live transaction feed
-- Alert review queue — mark as confirmed fraud or false alarm (feedback loop)
-- Model comparison page with precision-recall curves
-- Transaction detail view with SHAP feature-contribution bars
-- Secure analyst login (Supabase Auth + Row Level Security)
+- Live transaction feed over Supabase Realtime, with pause/resume and live KPIs
+- Alert review queue: confirm fraud or mark a false alarm, with a note (feedback loop), and a notification for every new alert
+- Alert detail with SHAP feature-contribution bars from the API
+- Model & system page: test metrics with confidence intervals, model comparison, training charts, and live API health and latency
+- Secure analyst login (Supabase Auth + Row Level Security); dark and light themes; works on phones
 
 **Production-ready**
 - pytest test suite, Docker Compose, GitHub Actions CI
@@ -525,6 +525,66 @@ python scripts/reset_demo_data.py --yes   # no prompt
 
 It deletes every row in `transactions`, and their alerts and feedback go with them. `model_runs` is kept. It uses the service role key from `.env`, so it only runs server-side.
 
+## Dashboard
+
+[`web/`](web/) is the analyst dashboard: React 19, TypeScript, Vite, Tailwind CSS v4 and React Router, with Recharts for the live latency chart. It talks to two things:
+
+- **Supabase**, directly from the browser, with the **publishable key** and the analyst's login token. Row Level Security decides what the analyst can read and change (read everything, change only `alerts.status`, add their own `feedback`). The secret / service-role key is never used in `web/`; a test fails if one appears there.
+- **The API**, for `GET /explain/{id}` (sent with the analyst's token), `/health` and `/metrics`. The API only accepts browser calls from the origins in `CORS_ORIGINS` (default `http://localhost:5180`).
+
+| Page | What it shows |
+|---|---|
+| `/` | Public landing page: an animated sample scoring stream (clearly labelled as sample data), how the pipeline works, and the real test-set results |
+| `/login` | Email + password sign-in for analysts (public sign-up is off) |
+| `/app` | **Live feed.** The newest 200 scored transactions, arriving in real time. KPIs: transactions per minute, % flagged, open alerts, average latency. Pause / resume |
+| `/app/alerts` | **Alert queue.** Open alerts, High first then newest, filterable by severity and status. Click one for its details, the SHAP explanation from the API, and **Confirm fraud** / **False alarm** with an optional note |
+| `/app/model` | **Model & system.** Test metrics with 95% confidence intervals, confusion matrix, model comparison, the Phase 2 charts, and live API health (polled every 5 s): uptime, errors, p50/p95 latency over time |
+
+How a review is saved: the alert's status changes only if it's still open (so two analysts can't review it twice), then a `feedback` row records the verdict and note. A database trigger stamps who reviewed it and when. If only the feedback step fails, the dashboard offers to retry just that step.
+
+### Run all three pieces
+
+The dev server uses port **5180** (not Vite's usual 5173). It refuses to start on a different port, because the API's CORS setting expects 5180.
+
+```bash
+# one-time setup
+cd web && npm install && cp .env.example .env
+# fill in web/.env: VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY (Supabase -> Project Settings -> API), VITE_API_URL
+```
+
+```bash
+# terminal 1: the API (saves to Supabase when the SUPABASE_* variables are set in .env)
+uvicorn api.main:app --no-access-log
+
+# terminal 2: the dashboard -> http://localhost:5180
+cd web && npm run dev
+
+# terminal 3: the stream (watch rows and alerts arrive live in the dashboard)
+python -m simulator --rate 20
+```
+
+Sign in with the demo analyst (`DEMO_ANALYST_EMAIL` / `DEMO_ANALYST_PASSWORD` in `.env`). Serving the dashboard from another address? Add it to `CORS_ORIGINS` in the root `.env`, comma-separated.
+
+```bash
+cd web
+npm test            # Vitest + React Testing Library (no network: Supabase and fetch are faked)
+npm run typecheck   # tsc
+npm run lint        # ESLint, including jsx-a11y accessibility rules
+npm run build       # production build in web/dist
+```
+
+### Accessibility
+
+Every page was checked with axe-core (WCAG 2.1 A/AA) in both themes, at laptop and phone widths, and is clean. Text meets 4.5:1 contrast in both themes. Risk and status are always shown as words, never colour alone. Everything works from the keyboard: there's a skip link, and dialogs keep focus inside, close with Esc and return focus to where you were. Animations switch off when the system's "reduce motion" setting is on.
+
+### Screenshots
+
+*Placeholder: screenshots will be added here (saved in `docs/screenshots/`).*
+
+| Live feed | Alert detail | Model & system |
+|---|---|---|
+| *coming soon* | *coming soon* | *coming soon* |
+
 ## How to run
 
 *Placeholder — detailed steps will be added as each component is built.*
@@ -535,7 +595,7 @@ It deletes every row in `transactions`, and their alerts and feedback go with th
 4. **Train models:** `python -m ml.train` (about 6–10 min on a laptop; add `--review-cost 10` to change the cost of one analyst review, or `--quick` for a 1-minute smoke run). It writes the model, threshold and metrics to `ml/artifacts/` and charts to `docs/figures/`. See [`docs/model_results.md`](docs/model_results.md).
 5. **Start the API:** `uvicorn api.main:app --no-access-log` (see [API](#api)).
 6. **Set up the database:** apply `supabase/migrations/`, create an analyst and load the model results (see [Database → Set up your own project](#set-up-your-own-project)).
-7. **Start the dashboard:** install and run the React app in `web/`.
+7. **Start the dashboard:** `cd web && npm install && npm run dev`, then open http://localhost:5180 (see [Dashboard](#dashboard)).
 8. **Start the stream:** `python -m simulator` in a second terminal (see [Simulator](#simulator)).
 9. **Or run everything with Docker Compose** *(Phase 7)*.
 
@@ -547,5 +607,5 @@ It deletes every row in `transactions`, and their alerts and feedback go with th
 - [x] Phase 3 — FastAPI service
 - [x] Phase 4 — Supabase integration
 - [x] Phase 5 — Stream simulator
-- [ ] Phase 6 — React dashboard
+- [x] Phase 6 — React dashboard
 - [ ] Phase 7 — Docker, CI, deployment

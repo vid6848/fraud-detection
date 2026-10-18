@@ -19,6 +19,8 @@ DEFAULT_METADATA_PATH = "ml/artifacts/metadata.json"
 DEFAULT_MEDIUM_THRESHOLD = 0.05
 DEFAULT_MAX_BATCH_SIZE = 1000
 DEFAULT_STORAGE_TIMEOUT_S = 5.0
+# Browser origins allowed to call the API (the dashboard's Vite dev server by default).
+DEFAULT_CORS_ORIGINS = ("http://localhost:5180",)
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class Settings:
     supabase_service_role_key: str | None = field(default=None, repr=False)
     supabase_anon_key: str | None = field(default=None, repr=False)
     storage_timeout_s: float = DEFAULT_STORAGE_TIMEOUT_S
+    cors_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
 
     @property
     def storage_configured(self) -> bool:
@@ -54,6 +57,7 @@ class Settings:
             supabase_service_role_key=_optional("SUPABASE_SERVICE_ROLE_KEY"),
             supabase_anon_key=_optional("SUPABASE_ANON_KEY"),
             storage_timeout_s=float(os.getenv("STORAGE_TIMEOUT_S", DEFAULT_STORAGE_TIMEOUT_S)),
+            cors_origins=_origins(os.getenv("CORS_ORIGINS")),
         )
 
 
@@ -61,6 +65,13 @@ def _optional(name: str) -> str | None:
     """An env var, treating empty values and `.env.example` placeholders as unset."""
     value = os.getenv(name, "").strip()
     return None if not value or "your-" in value else value
+
+
+def _origins(value: str | None) -> tuple[str, ...]:
+    """Comma-separated origins; unset means the default, empty means none."""
+    if value is None:
+        return DEFAULT_CORS_ORIGINS
+    return tuple(o.strip().rstrip("/") for o in value.split(",") if o.strip())
 
 
 def _resolve(path: str) -> Path:
