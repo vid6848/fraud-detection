@@ -29,3 +29,12 @@ describe('no secret keys in web/', () => {
     expect(vars).toEqual(['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_API_URL'])
   })
 })
+
+describe('training charts', () => {
+  it('every chart the page shows exists in public/figures', () => {
+    const gallery = readFileSync(join(WEB, 'src/components/model/FigureGallery.tsx'), 'utf8')
+    const files = [...gallery.matchAll(/file: '([^']+\.png)'/g)].map((m) => m[1]!)
+    expect(files).toHaveLength(6)
+    for (const f of files) expect(statSync(join(WEB, 'public/figures', f)).size).toBeGreaterThan(1000)
+  })
+})

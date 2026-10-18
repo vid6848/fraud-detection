@@ -52,3 +52,22 @@ const REASON_LABELS: Record<string, string> = {
 export function reasonLabel(code: string): string {
   return REASON_LABELS[code] ?? code.toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }
+
+/** "2h 05m", "4m 09s", "37s". */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '–'
+  const s = Math.max(0, Math.floor(seconds))
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (d) return `${d}d ${h}h`
+  if (h) return `${h}h ${pad(m)}m`
+  if (m) return `${m}m ${pad(sec)}s`
+  return `${sec}s`
+}
+
+/** "0.744 (95% CI 0.62–0.86)" style interval text. */
+export function formatInterval(low: number, high: number, fmt: (n: number) => string): string {
+  return `${fmt(low)}–${fmt(high)}`
+}
+
+export const formatCount = (n: number) => n.toLocaleString('en-US')

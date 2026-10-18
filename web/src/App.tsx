@@ -7,10 +7,10 @@ import { FullPageSpinner } from './components/StateViews'
 import { Landing } from './pages/Landing'
 import { Login } from './pages/Login'
 import { NotFound } from './pages/NotFound'
-import { Placeholder } from './pages/Placeholder'
 
 // Dashboard pages load on demand, so the landing and login pages stay small.
 const LiveFeed = lazy(() => import('./pages/LiveFeed').then((m) => ({ default: m.LiveFeed })))
+const ModelSystem = lazy(() => import('./pages/ModelSystem').then((m) => ({ default: m.ModelSystem })))
 const Alerts = lazy(() => import('./pages/Alerts').then((m) => ({ default: m.Alerts })))
 
 export function AppRoutes() {
@@ -22,7 +22,7 @@ export function AppRoutes() {
         <Route element={<Layout />}>
           <Route index element={<LiveFeed />} />
           <Route path="alerts" element={<Alerts />} />
-          <Route path="model" element={<Placeholder title="Model & system" description="Model quality and API health." />} />
+          <Route path="model" element={<ModelSystem />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>

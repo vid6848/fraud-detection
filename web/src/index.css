@@ -33,6 +33,8 @@
   --amber: #d97706;
   --rose: #e11d48;
   --emerald: #059669;
+  --series-1: #6d28d9;
+  --series-2: #0891b2;
   --glow-1: rgba(99, 102, 241, 0.16);
   --glow-2: rgba(6, 182, 212, 0.14);
   --glow-3: rgba(244, 63, 94, 0.08);
@@ -63,6 +65,8 @@
   --amber: #fbbf24;
   --rose: #fb7185;
   --emerald: #34d399;
+  --series-1: #8b5cf6;
+  --series-2: #0891b2;
   --glow-1: rgba(99, 102, 241, 0.22);
   --glow-2: rgba(34, 211, 238, 0.12);
   --glow-3: rgba(244, 63, 94, 0.09);
@@ -92,6 +96,8 @@
   --color-amber: var(--amber);
   --color-rose: var(--rose);
   --color-emerald: var(--emerald);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
   --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
