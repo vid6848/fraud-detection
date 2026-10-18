@@ -16,7 +16,8 @@ Train fraud-detection models on the Kaggle credit card dataset, serve them throu
 - Phase 4 (for reference): Supabase project `vdgitnbugzxcdneedsby`; migrations in `supabase/migrations/`; alert trigger (MEDIUM/HIGH), review-stamp trigger, Realtime on transactions/alerts; API background writes, `GET /explain/{id}` with caller's JWT; `scripts/load_model_runs.py`.
 - Phase 3 (for reference): FastAPI `/health`, `/predict`, `/predict/batch`, `/explain`, `/metrics`; `/predict` p50 6.6 ms storage off.
 - Phase 2 (for reference): Random Forest + class weights, isotonic-calibrated; test PR-AUC 0.744, precision 0.812, recall 0.750, cost saved $3,556 of $6,169 (`docs/model_results.md`).
-- **Next step:** user deploys (Supabase → Render → Vercel, `docs/deployment.md`), then replace the README's live-demo placeholders with the real URLs
+- **Deployed (2026-10-18):** dashboard https://fraud-detection-indol.vercel.app (permanent Vercel domain; Deployment Protection off), API https://fraud-detection-zb2m.onrender.com (Render free, Docker). Render `CORS_ORIGINS` = the permanent domain (+ one deployment URL). Gotchas hit: `VITE_API_URL` first copied as `http://localhost:8000`, then with a trailing `.` (Render 404s) → the dashboard now strips trailing dots/slashes/spaces; Vercel `VITE_*` vars must be type Config, not Secret.
+- **Next step:** none planned (project complete)
 - **Open questions / blockers:** none
 - **Notes:**
   - Using Python 3.13 (3.11 not installed; user chose 3.13).

@@ -105,7 +105,11 @@ Interactive docs: `$API/docs`. The `/predict` call above stores one transaction 
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Publishable / anon key (**not** the secret key) |
 | `VITE_API_URL` | The Render URL, e.g. `https://fraud-detection-api.onrender.com` (no trailing slash) |
 
-4. **Deploy.** Note the production URL, e.g. `https://fraud-watch.vercel.app`.
+4. **Deploy.**
+5. Find the **permanent address**: project **Overview → Domains**, e.g. `https://fraud-detection-indol.vercel.app`. Use this one everywhere (CORS, Supabase, sharing). The long addresses shown on each deployment (`fraud-detection-<hash>-<team>.vercel.app`) change with every deploy.
+6. Open the permanent address in a private window. If Vercel asks you to log in, go to **Settings → Deployment Protection** and turn **Vercel Authentication** off (or limit it to preview deployments); otherwise visitors can't see the site. The data stays protected by Supabase login and RLS either way.
+
+When typing `VITE_API_URL`, check the end carefully: `https://...onrender.com` with no `/`, `.` or space after it. (The dashboard strips these since a stray trailing dot once made every call return 404, but it's still worth getting right.) Add the `VITE_*` variables as plain **Config** values, not **Secret**: Vercel refuses secrets in `VITE_` variables because they end up in the browser, and these three are public by design.
 
 Vite writes these values into the JavaScript at build time. **After changing one, redeploy** (Deployments → ⋯ → Redeploy); a running deployment never picks up new values. If any is missing, the site shows a "Configuration missing" page listing what to add.
 
@@ -113,11 +117,11 @@ Vite writes these values into the JavaScript at build time. **After changing one
 
 ## 4. Connect the two
 
-1. **Render → fraud-detection-api → Environment:** set `CORS_ORIGINS` to the Vercel URL, exactly as the browser shows it, with no trailing slash:
+1. **Render → your service → Environment:** set `CORS_ORIGINS` to the **permanent** Vercel address, with no trailing slash:
    ```
-   https://fraud-watch.vercel.app
+   https://fraud-detection-indol.vercel.app
    ```
-   Several origins (a custom domain, a preview URL) are comma-separated. Saving redeploys the API.
+   Several origins (a custom domain, a specific deployment's long address) are comma-separated. Saving redeploys the API. If you open a deployment's long address instead of the permanent one, the browser is blocked until that address is added too.
 2. **Supabase → Authentication → URL Configuration:** Site URL = the Vercel URL (step 1.3).
 
 ---
@@ -144,7 +148,10 @@ Vite writes these values into the JavaScript at build time. **After changing one
 | Console: *blocked by CORS policy* | `CORS_ORIGINS` on Render doesn't match the page's origin exactly (scheme, host, no trailing slash). Fix it and let Render redeploy |
 | "Configuration missing" page | A `VITE_*` variable is missing or still a placeholder in Vercel, or you didn't redeploy after adding it |
 | 404 on refresh of `/app/...` | Root Directory isn't `web`, so `vercel.json` wasn't used |
-| "Can't reach the API" after 2 minutes | Render service failed or is still building: check its Logs. `VITE_API_URL` must be the Render URL with `https://` |
+| "Can't reach the API" after 2 minutes | Most often CORS: you opened a Vercel address that isn't in `CORS_ORIGINS` (each deployment's long address is different; use the permanent one). Otherwise the Render service failed or is still building (check its Logs), or `VITE_API_URL` is wrong: it must be `https://<name>.onrender.com` exactly, then **redeploy** on Vercel |
+| "Can't reach the API" says `http://localhost:8000` | `VITE_API_URL` was copied from `web/.env`. Set it to the Render URL and redeploy |
+| Vercel won't save a `VITE_` variable ("Remove the public framework prefix…") | It was created as **Secret**. Delete it and add it again as **Config** |
+| Visitors get a Vercel login page | Deployment Protection is on: Settings → Deployment Protection → Vercel Authentication off |
 | Login works, feed shows *permission denied* | Migrations or RLS policies weren't applied (step 1.1), or the user isn't signed in |
 | No **Start demo stream** button | `GET /demo/stream` returned 503: the API has no Supabase settings |
 | Demo stream: "rate-limited, try again in N s" | Working as designed: one start per analyst per minute, 12 per hour in total |

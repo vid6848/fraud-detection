@@ -26,7 +26,9 @@ export function readEnv(raw: Record<string, unknown>): EnvResult {
     config: {
       supabaseUrl: supabaseUrl!,
       supabasePublishableKey: supabasePublishableKey!,
-      apiUrl: apiUrl!.replace(/\/+$/, ''),
+      // Trailing slashes, dots or spaces (easy to paste into a hosting dashboard) would break
+      // every API call: `https://x.onrender.com.` answers 404 on Render.
+      apiUrl: apiUrl!.replace(/[\s/.]+$/, ''),
     },
   }
 }

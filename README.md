@@ -12,8 +12,8 @@ An end-to-end fraud detection system: machine-learning models trained on 284,807
 
 | | |
 |---|---|
-| **Dashboard** | `https://<your-app>.vercel.app` *(link added after deployment)* |
-| **API docs** | `https://<your-api>.onrender.com/docs` *(link added after deployment)* |
+| **Dashboard** | **https://fraud-detection-indol.vercel.app** |
+| **API docs** | **https://fraud-detection-zb2m.onrender.com/docs** (interactive; try `POST /predict` with the example transaction) |
 | **Analyst login** | Public sign-up is off; demo credentials on request |
 
 The API runs on Render's free plan and sleeps when idle: the first visit can take about a minute while it wakes (the dashboard says so). Once signed in, click **Start demo stream** to replay 200 held-out test transactions through the model and watch them, and the alerts they raise, arrive live. How it's deployed: [`docs/deployment.md`](docs/deployment.md).
