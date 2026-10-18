@@ -29,11 +29,12 @@ export function Skeleton({ rows = 5, label = 'Loading…' }: { rows?: number; la
   )
 }
 
-export function EmptyState({ title, children, icon }: { title: string; children?: ReactNode; icon?: ReactNode }) {
+export function EmptyState({ title, children, icon, level = 3 }: { title: string; children?: ReactNode; icon?: ReactNode; level?: 1 | 2 | 3 }) {
+  const Heading = `h${level}` as const
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 py-12 text-center">
       <div className="mb-3 text-muted" aria-hidden>{icon ?? <Inbox className="size-8" />}</div>
-      <h3 className="text-base font-semibold">{title}</h3>
+      <Heading className="text-base font-semibold">{title}</Heading>
       {children && <div className="mt-2 max-w-md text-sm text-muted">{children}</div>}
     </div>
   )

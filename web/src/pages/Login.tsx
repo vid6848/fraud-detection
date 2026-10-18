@@ -61,7 +61,7 @@ export function Login() {
         <p className="text-xs text-muted">Scores come from a Random Forest trained on 284,807 card transactions.</p>
       </aside>
 
-      <div className="relative grid place-items-center px-4 py-10">
+      <main className="relative grid place-items-center px-4 py-10">
         <div className="absolute right-4 top-4"><ThemeToggle /></div>
         <div className="w-full max-w-sm">
           <div className="mb-8 flex justify-center lg:hidden">
@@ -101,7 +101,7 @@ export function Login() {
             <ArrowLeft aria-hidden className="size-4" /> Back to the home page
           </Link>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

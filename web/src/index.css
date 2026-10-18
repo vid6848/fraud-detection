@@ -19,7 +19,7 @@
   --accent-2: #0e7490;
   --accent-fg: #ffffff;
   --accent-soft: #ebeafd;
-  --low: #15803d;
+  --low: #166534;
   --low-soft: #e6f6ec;
   --medium: #a15c07;
   --medium-soft: #fdf2df;
@@ -28,11 +28,12 @@
   --focus: #4f46e5;
   --shap-up: #c21f1f;
   --shap-down: #2563eb;
-  --violet: #7c3aed;
-  --cyan: #0891b2;
-  --amber: #d97706;
-  --rose: #e11d48;
-  --emerald: #059669;
+  /* Light-mode tones are dark enough (>= 4.5:1 on white) to be used as text too. */
+  --violet: #6d28d9;
+  --cyan: #0e7490;
+  --amber: #b45309;
+  --rose: #be123c;
+  --emerald: #047857;
   --series-1: #6d28d9;
   --series-2: #0891b2;
   --glow-1: rgba(99, 102, 241, 0.16);

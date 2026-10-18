@@ -48,7 +48,7 @@ export function Modal({ title, titleExtra, onClose, children, size = 'lg', label
       <div ref={panel} role="dialog" aria-modal="true" aria-labelledby={labelledBy}
         className={`relative flex max-h-[calc(100dvh-1.5rem)] w-full ${width} animate-modal-in flex-col overflow-hidden rounded-2xl border border-border bg-bg shadow-[0_30px_80px_-20px_rgba(2,6,23,0.6)] sm:max-h-[calc(100dvh-3rem)]`}>
         <div aria-hidden className="bg-brand h-1 shrink-0" />
-        <header className="flex items-center justify-between gap-3 border-b border-border bg-surface px-5 py-4">
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-5 py-4">
           <div className="flex min-w-0 flex-wrap items-center gap-2.5">
             <h2 id={labelledBy} ref={heading} tabIndex={-1} className="text-lg font-semibold">{title}</h2>
             {titleExtra}
@@ -57,8 +57,9 @@ export function Modal({ title, titleExtra, onClose, children, size = 'lg', label
             className="grid size-9 shrink-0 place-items-center rounded-lg border border-border text-muted transition-colors hover:bg-surface-2 hover:text-fg">
             <X aria-hidden className="size-5" />
           </button>
-        </header>
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        </div>
+        {/* Focusable so keyboard users can scroll long content (WCAG 2.1.1). */}
+        <div className="flex-1 overflow-y-auto" tabIndex={0} role="region" aria-labelledby={labelledBy}>{children}</div>
       </div>
     </div>,
     document.body,

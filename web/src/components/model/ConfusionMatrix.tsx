@@ -3,10 +3,10 @@ import type { Confusion } from '../../lib/modelRuns'
 /** The four outcomes at the alert threshold, labelled in analyst terms. */
 export function ConfusionMatrix({ cm }: { cm: Confusion }) {
   const cells = [
-    { key: 'tp', label: 'Fraud caught', n: cm.tp, cls: 'bg-emerald/15 text-emerald border-emerald/30' },
-    { key: 'fn', label: 'Fraud missed', n: cm.fn, cls: 'bg-rose/15 text-rose border-rose/30' },
-    { key: 'fp', label: 'False alarms', n: cm.fp, cls: 'bg-amber/15 text-amber border-amber/30' },
-    { key: 'tn', label: 'Legit, not flagged', n: cm.tn, cls: 'bg-surface-2 text-fg border-border' },
+    { key: 'tp', label: 'Fraud caught', n: cm.tp, cls: 'bg-emerald/10 border-emerald/50', dot: 'bg-emerald' },
+    { key: 'fn', label: 'Fraud missed', n: cm.fn, cls: 'bg-rose/10 border-rose/50', dot: 'bg-rose' },
+    { key: 'fp', label: 'False alarms', n: cm.fp, cls: 'bg-amber/10 border-amber/50', dot: 'bg-amber' },
+    { key: 'tn', label: 'Legit, not flagged', n: cm.tn, cls: 'bg-surface-2 border-border', dot: 'bg-muted' },
   ]
   return (
     <table className="w-full border-separate border-spacing-2 text-sm">
@@ -27,7 +27,9 @@ export function ConfusionMatrix({ cm }: { cm: Confusion }) {
               return (
                 <td key={cell.key} className={`rounded-xl border p-3 text-center ${cell.cls}`}>
                   <span className="block text-2xl font-semibold tabular-nums">{cell.n.toLocaleString()}</span>
-                  <span className="block text-xs opacity-90">{cell.label}</span>
+                  <span className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-muted">
+                    <span aria-hidden className={`size-2 rounded-full ${cell.dot}`} />{cell.label}
+                  </span>
                 </td>
               )
             })}

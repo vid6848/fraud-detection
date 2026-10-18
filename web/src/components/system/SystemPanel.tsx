@@ -133,7 +133,7 @@ function SystemBody({ snap, points, stale }: { snap: SystemSnapshot; points: { t
 
       <section aria-labelledby="endpoints-title" className="overflow-hidden rounded-2xl border border-border bg-surface">
         <h3 id="endpoints-title" className="px-4 pt-4 font-semibold">Endpoints</h3>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Endpoint latency table (scrolls sideways)">
           <table className="mt-2 w-full min-w-[32rem] text-sm">
             <thead className="border-y border-border bg-surface-2/60 text-left text-xs text-muted">
               <tr>

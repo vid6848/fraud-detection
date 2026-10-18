@@ -18,6 +18,10 @@ export default defineConfig([
       jsxA11y.flatConfigs.recommended,
     ],
     languageOptions: { ecmaVersion: 2022, globals: globals.browser },
+    rules: {
+      // Scrollable regions must be keyboard-focusable (WCAG 2.1.1), so allow tabIndex on them.
+      'jsx-a11y/no-noninteractive-tabindex': ['error', { roles: ['tabpanel', 'region'] }],
+    },
   },
   {
     files: ['tests/**', '*.config.{js,ts}'],
