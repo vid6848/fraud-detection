@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFakeSupabase, makeTx } from '../test/fakeSupabase'
@@ -54,9 +54,11 @@ describe('LiveFeed', () => {
     expect(within(rows[0]!).getByText('93.0%')).toBeInTheDocument()
     expect(within(rows[0]!).getByText('High')).toBeInTheDocument()
     expect(within(rows[0]!).getByText('Tiny amount')).toHaveAttribute('title', 'Charge under $1.00')
-    expect(screen.getByText('50.0%')).toBeInTheDocument() // flagged
-    expect(screen.getByText('15 ms')).toBeInTheDocument() // average latency
-    expect(await screen.findByText('3')).toBeInTheDocument() // open alerts
+    // Animated numbers render a visual copy and a screen-reader copy; check the latter.
+    const srText = (t: string) => screen.getAllByText(t).find((el) => el.classList.contains('sr-only'))
+    expect(srText('50.0%')).toBeTruthy() // flagged
+    expect(srText('15 ms')).toBeTruthy() // average latency
+    await waitFor(() => expect(srText('3')).toBeTruthy()) // open alerts
   })
 
   it('adds Realtime inserts to the top, and holds them while paused', async () => {

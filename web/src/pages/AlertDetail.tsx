@@ -1,8 +1,9 @@
-import { BrainCircuit, Loader2, RotateCw, ShieldCheck, ShieldX, X } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { BrainCircuit, ClipboardCheck, Loader2, RotateCw, ShieldCheck, ShieldX } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { useAuth } from '../auth/context'
 import { RiskBadge } from '../components/RiskBadge'
 import { ShapBars } from '../components/ShapBars'
+import { Modal } from '../components/Modal'
 import { ErrorState, Skeleton } from '../components/StateViews'
 import { StatusBadge } from '../components/StatusBadge'
 import { useAsync } from '../hooks/useAsync'
@@ -13,59 +14,37 @@ import { formatCurrency, formatDateTime, formatMs, formatProbability, reasonLabe
 import { getSupabase } from '../lib/supabase'
 import { useToast } from '../toast/context'
 
-/** Side panel (full screen on phones) with the transaction, its SHAP explanation and the review form. */
+/** Centred dialog with the transaction, its SHAP explanation and the review form. */
 export function AlertDetail({ id, onClose }: { id: number; onClose: () => void }) {
-  const heading = useRef<HTMLHeadingElement>(null)
   const detail = useAsync(async () => {
     const { data, error } = await getSupabase().from('alerts').select(ALERT_DETAIL_SELECT).eq('id', id).maybeSingle()
     if (error) throw new Error(error.message)
     return data ? toAlert(data as Record<string, unknown>) : null
   }, `alert-${id}`)
-
-  useEffect(() => {
-    heading.current?.focus()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   const alert = detail.data
 
   return (
-    <div className="fixed inset-0 z-50">
-      <button type="button" aria-label="Close alert details" tabIndex={-1} onClick={onClose}
-        className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
-      <section role="dialog" aria-modal="true" aria-labelledby="alert-detail-title"
-        className="absolute inset-y-0 right-0 flex w-full animate-panel-in flex-col border-l border-border bg-bg shadow-2xl sm:max-w-xl">
-        <header className="flex items-center justify-between gap-3 border-b border-border bg-surface px-5 py-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <h2 id="alert-detail-title" ref={heading} tabIndex={-1} className="text-lg font-semibold">Alert #{id}</h2>
-            {alert && <RiskBadge level={alert.severity} />}
-            {alert && <StatusBadge status={alert.status} />}
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close alert details"
-            className="grid size-9 place-items-center rounded-lg border border-border text-muted hover:bg-surface-2 hover:text-fg">
-            <X aria-hidden className="size-5" />
-          </button>
-        </header>
-
-        <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
-          {detail.loading && !alert ? <Skeleton rows={6} label="Loading alert" />
-            : detail.error ? <ErrorState title="Couldn’t load this alert" message={String((detail.error as Error).message ?? detail.error)} onRetry={detail.reload} />
-            : !alert ? <ErrorState title="Alert not found" message="It may have been deleted. Close this panel to go back to the queue." />
-            : <DetailBody alert={alert} onReviewed={detail.reload} />}
-        </div>
-      </section>
-    </div>
+    <Modal title={`Alert #${id}`} labelledBy="alert-detail-title" onClose={onClose} size="xl"
+      titleExtra={alert && <><RiskBadge level={alert.severity} /><StatusBadge status={alert.status} /></>}>
+      <div className="p-5">
+        {detail.loading && !alert ? <Skeleton rows={6} label="Loading alert" />
+          : detail.error ? <ErrorState title="Couldn’t load this alert" message={String((detail.error as Error).message ?? detail.error)} onRetry={detail.reload} />
+          : !alert ? <ErrorState title="Alert not found" message="It may have been deleted. Close this window to go back to the queue." />
+          : <DetailBody alert={alert} onReviewed={detail.reload} />}
+      </div>
+    </Modal>
   )
 }
 
 function DetailBody({ alert, onReviewed }: { alert: Alert; onReviewed: () => void }) {
   const tx = alert.transaction
   return (
-    <>
+    // DOM order = phone order (facts, explanation, review); on wide screens the
+    // explanation moves to its own column on the right.
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:grid-rows-[auto_1fr]">
+      <div className="lg:col-start-1 lg:row-start-1">
       {tx ? (
-        <section aria-labelledby="tx-title" className="rounded-xl border border-border bg-surface p-4">
+        <section aria-labelledby="tx-title" className="animate-rise-in rounded-2xl border border-border bg-surface p-4">
           <h3 id="tx-title" className="text-sm text-muted">Transaction</h3>
           <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">{formatCurrency(tx.amount)}</p>
           <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -95,13 +74,18 @@ function DetailBody({ alert, onReviewed }: { alert: Alert; onReviewed: () => voi
         <ErrorState title="Transaction missing" message="This alert’s transaction couldn’t be loaded." />
       )}
 
-      {tx && <Explanation transactionId={tx.id} />}
-
-      <section aria-labelledby="review-title" className="rounded-xl border border-border bg-surface p-4">
-        <h3 id="review-title" className="font-semibold">Review</h3>
-        {alert.status === 'open' ? <ReviewForm alertId={alert.id} onReviewed={onReviewed} /> : <ReviewHistory alert={alert} />}
-      </section>
-    </>
+      </div>
+      <div className="lg:col-start-2 lg:row-span-2 lg:row-start-1">{tx && <Explanation transactionId={tx.id} />}</div>
+      <div className="lg:col-start-1 lg:row-start-2">
+        <section aria-labelledby="review-title" className="animate-rise-in rounded-2xl border border-border bg-surface p-4" style={{ animationDelay: '120ms' }}>
+          <h3 id="review-title" className="flex items-center gap-2 font-semibold">
+            <span className="grid size-7 place-items-center rounded-lg bg-emerald/15 text-emerald"><ClipboardCheck aria-hidden className="size-4" /></span>
+            Review
+          </h3>
+          {alert.status === 'open' ? <ReviewForm alertId={alert.id} onReviewed={onReviewed} /> : <ReviewHistory alert={alert} />}
+        </section>
+      </div>
+    </div>
   )
 }
 
@@ -120,9 +104,10 @@ function Explanation({ transactionId }: { transactionId: string }) {
   const result = useAsync((signal) => fetchExplanation(transactionId, token, signal), token ? `explain-${transactionId}` : null)
 
   return (
-    <section aria-labelledby="explain-title" className="rounded-xl border border-border bg-surface p-4">
+    <section aria-labelledby="explain-title" className="animate-rise-in rounded-2xl border border-border bg-surface p-4" style={{ animationDelay: '60ms' }}>
       <h3 id="explain-title" className="flex items-center gap-2 font-semibold">
-        <BrainCircuit aria-hidden className="size-4 text-accent" /> Why the model flagged it
+        <span className="grid size-7 place-items-center rounded-lg bg-violet/15 text-violet"><BrainCircuit aria-hidden className="size-4" /></span>
+        Why the model flagged it
       </h3>
       <div className="mt-3">
         {result.loading ? <Skeleton rows={5} label="Loading explanation" />

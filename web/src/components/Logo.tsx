@@ -4,12 +4,13 @@
  */
 export function LogoMark({ className = 'size-8' }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden focusable="false">
-      <rect width="32" height="32" rx="9" className="fill-accent" />
-      <rect x="6.5" y="9" width="19" height="14" rx="3" fill="none" className="stroke-accent-fg" strokeWidth="1.8" />
-      <path d="M6.5 16.5h5l2-4 3.2 7.5 2.3-5 1.2 1.5h5.3" fill="none" className="stroke-accent-fg"
-        strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <span className={`bg-brand grid shrink-0 place-items-center rounded-[9px] shadow-[0_6px_20px_-6px_var(--accent)] ${className}`}>
+      <svg viewBox="0 0 32 32" className="size-full" aria-hidden focusable="false">
+        <rect x="6.5" y="9" width="19" height="14" rx="3" fill="none" className="stroke-accent-fg" strokeWidth="1.8" />
+        <path d="M6.5 16.5h5l2-4 3.2 7.5 2.3-5 1.2 1.5h5.3" fill="none" className="stroke-accent-fg"
+          strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
   )
 }
 

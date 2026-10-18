@@ -1,5 +1,6 @@
-import { Activity, Flag, Pause, Play, Radio, ShieldAlert, Timer } from 'lucide-react'
+import { Activity, Flag, Pause, Play, Radar, Radio, ShieldAlert, Timer } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { AnimatedNumber } from '../components/AnimatedNumber'
 import { CopyCommand } from '../components/CopyCommand'
 import { KpiCard } from '../components/KpiCard'
 import { LiveIndicator } from '../components/LiveIndicator'
@@ -25,12 +26,13 @@ export function LiveFeed() {
     <>
       <PageHeader
         title="Live feed"
+        icon={Radar}
         description={`Every transaction the API scores, newest first. The latest ${FEED_CAP} are kept on screen.`}
         actions={
           <>
             <LiveIndicator status={live} paused={state.paused} />
             <button type="button" onClick={state.paused ? resume : pause} aria-pressed={state.paused}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-2">
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-2">
               {state.paused ? <Play aria-hidden className="size-4" /> : <Pause aria-hidden className="size-4" />}
               {state.paused ? 'Resume' : 'Pause'}
               {state.paused && waiting > 0 && (
@@ -44,13 +46,18 @@ export function LiveFeed() {
       />
 
       <section aria-label="Key figures" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Transactions / min" icon={Activity} value={kpis.perMinute.toLocaleString()} hint="Scored in the last 60 seconds" />
-        <KpiCard label="Flagged" icon={Flag} value={formatPercent(kpis.flaggedPct)}
+        <KpiCard label="Transactions / min" icon={Activity} tone="violet" delay={0}
+          value={<AnimatedNumber value={kpis.perMinute} format={(n) => Math.round(n).toLocaleString()} />}
+          hint="Scored in the last 60 seconds" />
+        <KpiCard label="Flagged" icon={Flag} tone="amber" delay={60}
+          value={kpis.flaggedPct === null ? '–' : <AnimatedNumber value={kpis.flaggedPct} format={(n) => formatPercent(n)} />}
           hint={kpis.sample ? `${kpis.flagged} of the last ${kpis.sample} are Medium or High` : 'No transactions yet'} />
-        <KpiCard label="Open alerts" icon={ShieldAlert} tone={alerts.count ? 'alert' : 'default'}
-          value={alerts.error ? '–' : alerts.count === null ? '…' : alerts.count.toLocaleString()}
+        <KpiCard label="Open alerts" icon={ShieldAlert} tone="rose" delay={120}
+          value={alerts.error ? '–' : alerts.count === null ? '…' : <AnimatedNumber value={alerts.count} format={(n) => Math.round(n).toLocaleString()} />}
           hint={alerts.error ? 'Couldn’t load alerts' : <Link to="/app/alerts" className="underline-offset-2 hover:underline">Review in the alert queue</Link>} />
-        <KpiCard label="Average latency" icon={Timer} value={formatMs(kpis.avgLatencyMs)} hint="API scoring time per transaction" />
+        <KpiCard label="Average latency" icon={Timer} tone="cyan" delay={180}
+          value={kpis.avgLatencyMs === null ? '–' : <AnimatedNumber value={kpis.avgLatencyMs} format={(n) => formatMs(n)} />}
+          hint="API scoring time per transaction" />
       </section>
 
       {live === 'error' && state.status === 'ready' && (
@@ -83,7 +90,7 @@ function FeedBody({ state, retry }: { state: ReturnType<typeof useLiveTransactio
     )
   }
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface">
+    <div className="animate-rise-in overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_20px_50px_-30px_rgba(15,23,42,0.35)]" style={{ animationDelay: '200ms' }}>
       {/* Desktop / tablet: table */}
       <table className="hidden w-full text-sm md:table">
         <caption className="sr-only">Latest scored transactions, newest first</caption>

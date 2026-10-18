@@ -9,9 +9,9 @@ const inputClass =
   'mt-1.5 block w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm placeholder:text-muted/70 focus:border-accent'
 
 const FEATURES = [
-  { icon: Radio, title: 'Live feed', body: 'Transactions appear the moment the API scores them.' },
-  { icon: ShieldAlert, title: 'Alert queue', body: 'Medium and High scores wait here for your review.' },
-  { icon: BrainCircuit, title: 'Reasons for every score', body: 'See which features pushed the risk up or down.' },
+  { icon: Radio, title: 'Live feed', body: 'Transactions appear the moment the API scores them.', tone: 'bg-cyan/15 text-cyan' },
+  { icon: ShieldAlert, title: 'Alert queue', body: 'Medium and High scores wait here for your review.', tone: 'bg-rose/15 text-rose' },
+  { icon: BrainCircuit, title: 'Reasons for every score', body: 'See which features pushed the risk up or down.', tone: 'bg-violet/15 text-violet' },
 ]
 
 export function Login() {
@@ -37,16 +37,17 @@ export function Login() {
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1fr_1.1fr]">
       {/* Brand panel (desktop only) */}
-      <aside className="relative hidden flex-col justify-between overflow-hidden border-r border-border bg-surface p-10 lg:flex">
+      <aside className="relative hidden flex-col justify-between overflow-hidden border-r border-border bg-surface/60 p-10 backdrop-blur lg:flex">
+        <div aria-hidden className="bg-brand pointer-events-none absolute -bottom-32 -left-32 size-96 rounded-full opacity-20 blur-3xl" />
         <Link to="/" aria-label="Fraud Watch home" className="w-fit rounded-lg"><Logo /></Link>
         <div className="max-w-md">
           <h2 className="text-4xl font-semibold leading-[1.1] tracking-[-0.03em] [font-stretch:88%]">
             The model flags it. You make the call.
           </h2>
           <ul className="mt-8 space-y-5">
-            {FEATURES.map(({ icon: Icon, title, body }) => (
+            {FEATURES.map(({ icon: Icon, title, body, tone }) => (
               <li key={title} className="flex gap-4">
-                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+                <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${tone}`}>
                   <Icon aria-hidden className="size-4.5" />
                 </span>
                 <div>
@@ -88,7 +89,7 @@ export function Login() {
             )}
 
             <button type="submit" disabled={submitting || !email || !password}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+              className="inline-flex w-full items-center justify-center gap-2 bg-brand rounded-xl px-4 py-2.5 text-sm font-semibold text-accent-fg shadow-[0_10px_30px_-10px_var(--accent)] hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50">
               {submitting && <Loader2 aria-hidden className="size-4 animate-spin" />}
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>

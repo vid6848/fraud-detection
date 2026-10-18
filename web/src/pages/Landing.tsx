@@ -9,10 +9,10 @@ const REPO_URL = 'https://github.com/vid6848/Fraud_Detection'
 
 // The real pipeline, in order (so the numbering means something).
 const STEPS = [
-  { icon: Radio, title: 'Stream', body: 'A simulator replays held-out card transactions at 20 per second, like a payment network would.' },
-  { icon: BrainCircuit, title: 'Score', body: 'The API runs each one through a calibrated Random Forest and two simple rules. Median time: 6.6 ms.' },
-  { icon: Database, title: 'Store', body: 'Every result is saved in Supabase. Medium and High scores open an alert automatically.' },
-  { icon: UserCheck, title: 'Review', body: 'An analyst sees why the model scored it, then confirms fraud or marks a false alarm.' },
+  { icon: Radio, tone: 'text-cyan', title: 'Stream', body: 'A simulator replays held-out card transactions at 20 per second, like a payment network would.' },
+  { icon: BrainCircuit, tone: 'text-violet', title: 'Score', body: 'The API runs each one through a calibrated Random Forest and two simple rules. Median time: 6.6 ms.' },
+  { icon: Database, tone: 'text-emerald', title: 'Store', body: 'Every result is saved in Supabase. Medium and High scores open an alert automatically.' },
+  { icon: UserCheck, tone: 'text-rose', title: 'Review', body: 'An analyst sees why the model scored it, then confirms fraud or marks a false alarm.' },
 ]
 
 // Test-set results from ml/artifacts/metadata.json (evaluated once; see docs/model_results.md).
@@ -24,7 +24,7 @@ const RESULTS = [
 ]
 
 const primaryBtn =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-semibold text-accent-fg hover:opacity-90'
+  'inline-flex items-center justify-center gap-2 bg-brand rounded-xl px-5 py-3 text-sm font-semibold text-accent-fg shadow-[0_10px_30px_-10px_var(--accent)] transition-transform hover:-translate-y-0.5'
 const secondaryBtn =
   'inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-5 py-3 text-sm font-semibold hover:bg-surface-2'
 
@@ -71,15 +71,15 @@ export function Landing() {
         </section>
 
         {/* Pipeline */}
-        <section id="how" aria-labelledby="how-title" className="scroll-mt-8 border-y border-border bg-surface">
+        <section id="how" aria-labelledby="how-title" className="scroll-mt-8 border-y border-border bg-surface/60 backdrop-blur">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
             <h2 id="how-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">How a transaction moves through the system</h2>
             <p className="mt-2 max-w-2xl text-muted">Four steps, from the moment a payment arrives to an analyst’s decision.</p>
             <ol className="relative mt-10 grid gap-8 md:grid-cols-4 md:gap-6">
-              <span aria-hidden className="absolute left-5 top-5 hidden h-px w-[calc(100%-2.5rem)] bg-border md:block" />
-              {STEPS.map(({ icon: Icon, title, body }, i) => (
+              <span aria-hidden className="flow-line absolute left-5 top-5 hidden h-px w-[calc(100%-2.5rem)] animate-flow md:block" />
+              {STEPS.map(({ icon: Icon, tone, title, body }, i) => (
                 <li key={title} className="relative flex gap-4 md:block">
-                  <span className="relative z-10 grid size-10 shrink-0 place-items-center rounded-full border border-border bg-bg text-accent">
+                  <span className={`relative z-10 grid size-10 shrink-0 place-items-center rounded-full border border-border bg-bg ${tone}`}>
                     <Icon aria-hidden className="size-5" />
                   </span>
                   <div className="md:mt-5">

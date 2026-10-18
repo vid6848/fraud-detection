@@ -30,7 +30,7 @@ export function ShapBars({ features, baseValue, modelScore }: {
       </p>
 
       <ul className="mt-4 space-y-3.5" aria-label="Feature contributions, largest first">
-        {sorted.map((f) => {
+        {sorted.map((f, i) => {
           const up = f.shap_value >= 0
           const width = (Math.abs(f.shap_value) / span) * 100
           return (
@@ -40,8 +40,12 @@ export function ShapBars({ features, baseValue, modelScore }: {
                 <span className="relative h-3.5" aria-hidden title={f.description}>
                   <span className="absolute inset-y-0 w-px bg-border" style={{ left: `${zero}%` }} />
                   <span
-                    className={`absolute inset-y-0 ${up ? 'rounded-r bg-shap-up' : 'rounded-l bg-shap-down'}`}
-                    style={up ? { left: `${zero}%`, width: `max(${width}%, 2px)` } : { right: `${100 - zero}%`, width: `max(${width}%, 2px)` }}
+                    className={`absolute inset-y-0 animate-grow-x ${up ? 'origin-left rounded-r bg-shap-up' : 'origin-right rounded-l bg-shap-down'}`}
+                    style={{
+                      ...(up ? { left: `${zero}%` } : { right: `${100 - zero}%` }),
+                      width: `max(${width}%, 2px)`,
+                      animationDelay: `${150 + i * 80}ms`,
+                    }}
                   />
                 </span>
                 <span className="text-right text-sm tabular-nums">{fmt(f.shap_value)}</span>

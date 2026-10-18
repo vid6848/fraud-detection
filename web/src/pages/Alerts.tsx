@@ -1,4 +1,4 @@
-import { ChevronRight, FilterX, ShieldCheck } from 'lucide-react'
+import { ChevronRight, FilterX, ShieldCheck, Siren } from 'lucide-react'
 import { useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { LiveIndicator } from '../components/LiveIndicator'
@@ -54,7 +54,7 @@ export function Alerts() {
 
   return (
     <>
-      <PageHeader title="Alerts"
+      <PageHeader title="Alerts" icon={Siren}
         description="Transactions the API flagged as Medium or High risk. High comes first, then the newest."
         actions={<LiveIndicator status={live} />} />
 
@@ -84,9 +84,9 @@ export function Alerts() {
             </EmptyState>
           )
         ) : (
-          <ul className="overflow-hidden rounded-xl border border-border bg-surface" aria-label="Alerts">
+          <ul className="overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_20px_50px_-30px_rgba(15,23,42,0.35)]" aria-label="Alerts">
             {visible.map((a, i) => (
-              <AlertRow key={a.id} alert={a} selected={a.id === selectedId} first={i === 0} onOpen={() => open(a.id)} />
+              <AlertRow key={a.id} alert={a} index={i} selected={a.id === selectedId} onOpen={() => open(a.id)} />
             ))}
           </ul>
         )}
@@ -96,12 +96,13 @@ export function Alerts() {
   )
 }
 
-function AlertRow({ alert, selected, first, onOpen }: { alert: Alert; selected: boolean; first: boolean; onOpen: () => void }) {
+function AlertRow({ alert, selected, index, onOpen }: { alert: Alert; selected: boolean; index: number; onOpen: () => void }) {
   const tx = alert.transaction
   return (
-    <li className={first ? '' : 'border-t border-border'}>
+    <li className={`relative animate-rise-in ${index === 0 ? '' : 'border-t border-border'}`} style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}>
+      <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${alert.severity === 'HIGH' ? 'bg-high' : 'bg-medium'}`} />
       <button type="button" id={`alert-row-${alert.id}`} onClick={onOpen} aria-current={selected || undefined}
-        className={`grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 px-4 py-3.5 text-left transition-colors hover:bg-surface-2 md:grid-cols-[6rem_7rem_1fr_9rem_auto] ${
+        className={`grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 py-3.5 pl-5 pr-4 text-left transition-colors hover:bg-surface-2 md:grid-cols-[6rem_7rem_1fr_9rem_auto] ${
           selected ? 'bg-accent-soft/60' : ''}`}>
         <span className="flex items-center gap-2 md:block"><RiskBadge level={alert.severity} /></span>
         <span className="justify-self-end text-base font-semibold tabular-nums md:justify-self-start">
