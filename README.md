@@ -574,15 +574,17 @@ It deletes every row in `transactions`, and their alerts and feedback go with th
 [`web/`](web/) is the analyst dashboard: React 19, TypeScript, Vite, Tailwind CSS v4 and React Router, with Recharts for the live latency chart. It talks to two things:
 
 - **Supabase**, directly from the browser, with the **publishable key** and the analyst's login token. Row Level Security decides what the analyst can read and change (read everything, change only `alerts.status`, add their own `feedback`). The secret / service-role key is never used in `web/`; a test fails if one appears there.
-- **The API**, for `GET /explain/{id}` (sent with the analyst's token), `/health` and `/metrics`. The API only accepts browser calls from the origins in `CORS_ORIGINS` (default `http://localhost:5180`).
+- **The API**, for `GET /explain/{id}` and `POST /demo/stream` (sent with the analyst's token), `/health` and `/metrics`. The API only accepts browser calls from the origins in `CORS_ORIGINS` (default `http://localhost:5180`).
 
 | Page | What it shows |
 |---|---|
 | `/` | Public landing page: an animated sample scoring stream (clearly labelled as sample data), how the pipeline works, and the real test-set results |
 | `/login` | Email + password sign-in for analysts (public sign-up is off) |
-| `/app` | **Live feed.** The newest 200 scored transactions, arriving in real time. KPIs: transactions per minute, % flagged, open alerts, average latency. Pause / resume |
+| `/app` | **Live feed.** The newest 200 scored transactions, arriving in real time. KPIs: transactions per minute, % flagged, open alerts, average latency. Pause / resume. **Start demo stream** replays 200 held-out test transactions through the API (about 20 s) with a progress bar |
 | `/app/alerts` | **Alert queue.** Open alerts, High first then newest, filterable by severity and status. Click one for its details, the SHAP explanation from the API, and **Confirm fraud** / **False alarm** with an optional note |
 | `/app/model` | **Model & system.** Test metrics with 95% confidence intervals, confusion matrix, model comparison, the Phase 2 charts, and live API health (polled every 5 s): uptime, errors, p50/p95 latency over time |
+
+**When the API is asleep.** The deployed API runs on Render's free plan, which sleeps after 15 minutes without traffic and takes about a minute to wake. The dashboard pings `/health` as soon as the page loads, so the API starts waking while you log in. If `/health` is slow (over 3 s) or failing, every dashboard page shows *"API is waking up (free tier, ~1 min)"* with a timer and keeps retrying; after 2 minutes it switches to *"Can't reach the API"* with a Retry button. The live feed and alerts keep working meanwhile, because they come straight from Supabase. Against a local API there is no cold start, so a failure shows as "Can't reach the API" at once.
 
 How a review is saved: the alert's status changes only if it's still open (so two analysts can't review it twice), then a `feedback` row records the verdict and note. A database trigger stamps who reviewed it and when. If only the feedback step fails, the dashboard offers to retry just that step.
 
@@ -616,6 +618,10 @@ npm run typecheck   # tsc
 npm run lint        # ESLint, including jsx-a11y accessibility rules
 npm run build       # production build in web/dist
 ```
+
+### Deploy to Vercel
+
+[`web/vercel.json`](web/vercel.json) has everything Vercel needs: a Vite build into `dist/`, a rewrite that sends every path to `index.html` (so deep links like `/app/alerts` and page refreshes work with React Router), a one-year cache for the hashed files in `/assets/`, and a few security headers. In Vercel set **Root Directory** to `web` and add the three `VITE_*` variables under **Settings → Environment Variables**. Vite builds them into the page, so **redeploy** after changing them; without them the site shows a "Configuration missing" page listing what to add. Then add the Vercel URL to the API's `CORS_ORIGINS`. Full walkthrough: Phase 7 step 5.
 
 ### Accessibility
 

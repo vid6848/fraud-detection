@@ -145,7 +145,8 @@ def create_app(settings: Settings | None = None,
         allow_origins=list(settings.cors_origins),
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-        expose_headers=["X-Request-ID"],
+        # Retry-After isn't CORS-safelisted: without this the dashboard can't read a 429's wait.
+        expose_headers=["X-Request-ID", "Retry-After"],
     )
 
     def get_store(request: Request) -> ModelStore:

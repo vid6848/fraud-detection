@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeApi, idleDemo, json } from '../test/fakeApi'
 import { createFakeSupabase, makeTx } from '../test/fakeSupabase'
 import { fakeSession, renderWithProviders } from '../test/render'
 import { LiveFeed } from './LiveFeed'
@@ -15,13 +16,22 @@ const table = () => screen.getByRole('table')
 describe('LiveFeed', () => {
   beforeEach(() => {
     fake = createFakeSupabase({ transactions: { data: [] }, alerts: { count: 0 } })
+    vi.stubGlobal('fetch', fakeApi({ 'GET /demo/stream': () => json(200, idleDemo) }))
   })
+  afterEach(() => vi.unstubAllGlobals())
 
-  it('shows the waiting state with simulator instructions when there are no rows', async () => {
+  it('shows the waiting state pointing to the demo stream, with local instructions folded away', async () => {
     renderFeed()
-    expect(await screen.findByText('Waiting for transactions — start the simulator')).toBeInTheDocument()
+    expect(await screen.findByText('Waiting for transactions')).toBeInTheDocument()
+    expect(screen.getByText(/Click/)).toHaveTextContent('Click Start demo stream above')
+    expect(screen.getByText('Running the project locally?')).toBeInTheDocument()
     expect(screen.getByText('python -m simulator --rate 20')).toBeInTheDocument()
     expect(screen.getByText('Live')).toBeInTheDocument()
+  })
+
+  it('has a Start demo stream button in the header', async () => {
+    renderFeed()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start demo stream' })).toBeEnabled())
   })
 
   it('shows an error with a retry button when loading fails', async () => {

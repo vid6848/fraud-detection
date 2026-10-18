@@ -2,6 +2,7 @@ import { Activity, Flag, Pause, Play, Radar, Radio, ShieldAlert, Timer } from 'l
 import { Link } from 'react-router-dom'
 import { AnimatedNumber } from '../components/AnimatedNumber'
 import { CopyCommand } from '../components/CopyCommand'
+import { DemoStreamControl } from '../components/DemoStreamControl'
 import { KpiCard } from '../components/KpiCard'
 import { LiveIndicator } from '../components/LiveIndicator'
 import { PageHeader } from '../components/PageHeader'
@@ -9,6 +10,7 @@ import { ProbabilityBar } from '../components/ProbabilityBar'
 import { ReasonChips } from '../components/ReasonChips'
 import { RiskBadge } from '../components/RiskBadge'
 import { EmptyState, ErrorState, Skeleton } from '../components/StateViews'
+import { useDemoStream } from '../hooks/useDemoStream'
 import { useLiveTransactions } from '../hooks/useLiveTransactions'
 import { useNow } from '../hooks/useNow'
 import { useOpenAlertCount } from '../hooks/useOpenAlertCount'
@@ -18,6 +20,7 @@ import { formatCurrency, formatFeedTime, formatMs, formatPercent } from '../lib/
 export function LiveFeed() {
   const { state, live, retry, pause, resume } = useLiveTransactions()
   const alerts = useOpenAlertCount()
+  const demo = useDemoStream()
   const now = useNow()
   const kpis = computeKpis(state, now)
   const waiting = state.buffer.length
@@ -30,6 +33,7 @@ export function LiveFeed() {
         description={`Every transaction the API scores, newest first. The latest ${FEED_CAP} are kept on screen.`}
         actions={
           <>
+            <DemoStreamControl demo={demo} />
             <LiveIndicator status={live} paused={state.paused} />
             <button type="button" onClick={state.paused ? resume : pause} aria-pressed={state.paused}
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-2">
@@ -80,12 +84,19 @@ function FeedBody({ state, retry }: { state: ReturnType<typeof useLiveTransactio
   }
   if (!state.rows.length) {
     return (
-      <EmptyState title="Waiting for transactions — start the simulator" icon={<Radio className="size-8" />}>
-        <p>New transactions appear here the moment the API scores them. Start the API and the simulator from the project folder:</p>
-        <div className="mt-4 space-y-2">
-          <CopyCommand command="uvicorn api.main:app --no-access-log" />
-          <CopyCommand command="python -m simulator --rate 20" />
-        </div>
+      <EmptyState title="Waiting for transactions" icon={<Radio className="size-8" />}>
+        <p>
+          New transactions appear here the moment the API scores them. Click <strong>Start demo stream</strong> above
+          to replay 200 held-out test transactions through the model (about 20 seconds).
+        </p>
+        <details className="mt-4 text-left">
+          <summary className="cursor-pointer text-center font-medium text-fg">Running the project locally?</summary>
+          <p className="mt-2">Start the API and the simulator from the project folder:</p>
+          <div className="mt-2 space-y-2">
+            <CopyCommand command="uvicorn api.main:app --no-access-log" />
+            <CopyCommand command="python -m simulator --rate 20" />
+          </div>
+        </details>
       </EmptyState>
     )
   }
