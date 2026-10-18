@@ -21,6 +21,12 @@ DEFAULT_MAX_BATCH_SIZE = 1000
 DEFAULT_STORAGE_TIMEOUT_S = 5.0
 # Browser origins allowed to call the API (the dashboard's Vite dev server by default).
 DEFAULT_CORS_ORIGINS = ("http://localhost:5180",)
+# POST /demo/stream: a label-free slice of the test split, replayed at ~10 rows/s.
+DEFAULT_DEMO_ROWS_PATH = "api/assets/demo_rows.csv.gz"
+DEFAULT_DEMO_RATE_PER_S = 10.0
+DEFAULT_DEMO_MAX_ROWS = 200
+DEFAULT_DEMO_COOLDOWN_S = 60.0  # per analyst
+DEFAULT_DEMO_MAX_PER_HOUR = 12  # all analysts together
 
 
 @dataclass(frozen=True)
@@ -37,6 +43,11 @@ class Settings:
     supabase_anon_key: str | None = field(default=None, repr=False)
     storage_timeout_s: float = DEFAULT_STORAGE_TIMEOUT_S
     cors_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
+    demo_rows_path: Path = field(default_factory=lambda: _resolve(DEFAULT_DEMO_ROWS_PATH))
+    demo_rate_per_s: float = DEFAULT_DEMO_RATE_PER_S
+    demo_max_rows: int = DEFAULT_DEMO_MAX_ROWS
+    demo_cooldown_s: float = DEFAULT_DEMO_COOLDOWN_S
+    demo_max_per_hour: int = DEFAULT_DEMO_MAX_PER_HOUR
 
     @property
     def storage_configured(self) -> bool:
@@ -58,6 +69,11 @@ class Settings:
             supabase_anon_key=_optional("SUPABASE_ANON_KEY"),
             storage_timeout_s=float(os.getenv("STORAGE_TIMEOUT_S", DEFAULT_STORAGE_TIMEOUT_S)),
             cors_origins=_origins(os.getenv("CORS_ORIGINS")),
+            demo_rows_path=_resolve(os.getenv("DEMO_ROWS_PATH", DEFAULT_DEMO_ROWS_PATH)),
+            demo_rate_per_s=float(os.getenv("DEMO_RATE_PER_S", DEFAULT_DEMO_RATE_PER_S)),
+            demo_max_rows=int(os.getenv("DEMO_MAX_ROWS", DEFAULT_DEMO_MAX_ROWS)),
+            demo_cooldown_s=float(os.getenv("DEMO_COOLDOWN_S", DEFAULT_DEMO_COOLDOWN_S)),
+            demo_max_per_hour=int(os.getenv("DEMO_MAX_PER_HOUR", DEFAULT_DEMO_MAX_PER_HOUR)),
         )
 
 

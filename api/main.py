@@ -7,6 +7,9 @@ one JSON log line, and turns unexpected exceptions into a clean 500.
 Scored transactions are saved to Supabase in a background task that runs after
 the response has been sent, so storage never slows scoring down, and a storage
 outage is logged and counted in /metrics instead of failing the request.
+
+POST /demo/stream (see api/demo.py) replays held-out test rows server-side so the
+deployed dashboard can show a live stream without running the simulator.
 """
 import logging
 import re
@@ -17,12 +20,14 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from uuid import UUID
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+import pandas as pd
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from api.config import Settings
+from api.demo import DemoBusy, DemoRateLimited, DemoStreamer, load_demo_rows, retry_after_header
 from api.errors import error_response, register_error_handlers
 from api.explanations import explain_row
 from api.logging_setup import LOGGER_NAME, configure_logging
@@ -30,6 +35,8 @@ from api.metrics import MetricsCollector
 from api.model_store import ModelStore
 from api.schemas import (
     BatchPredictResponse,
+    DemoStreamRequest,
+    DemoStreamStatus,
     ExplainResponse,
     HealthResponse,
     MetricsResponse,
@@ -48,6 +55,7 @@ from api.storage import (
     build_store,
     stored_frame,
 )
+from ml.config import RAW_COLUMNS
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -72,7 +80,11 @@ def create_app(settings: Settings | None = None,
         if app.state.storage is None:
             logger.warning("storage disabled: set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY "
                            "and SUPABASE_ANON_KEY to save scored transactions")
+        app.state.demo = _build_demo(app, settings)
         yield
+        if app.state.demo is not None:
+            await app.state.demo.aclose()
+        app.state.demo = None
         if storage is None and app.state.storage is not None:
             app.state.storage.close()  # only close a store this app built
         app.state.store = None
@@ -88,6 +100,7 @@ def create_app(settings: Settings | None = None,
     BatchPredictRequest = make_batch_request(settings.max_batch_size)
     app.state.store = None
     app.state.storage = None
+    app.state.demo = None
     app.state.metrics = MetricsCollector()
     register_error_handlers(app)
 
@@ -155,6 +168,27 @@ def create_app(settings: Settings | None = None,
                                 "'Authorization: Bearer <Supabase access token>'",
                                 headers={"WWW-Authenticate": "Bearer"})
         return credentials.credentials
+
+    def analyst_id(request: Request, token: str = Depends(analyst_token)) -> str:
+        """Ask Supabase Auth who the token belongs to (runs in a worker thread)."""
+        storage = get_storage(request)
+        try:
+            return storage.verify_user(token)
+        except InvalidToken:
+            raise HTTPException(status_code=401, detail="Invalid or expired analyst token",
+                                headers={"WWW-Authenticate": "Bearer"}) from None
+        except StorageUnavailable as exc:
+            logger.error("auth check failed", extra={
+                "request_id": request.state.request_id, "error_type": str(exc)})
+            raise HTTPException(status_code=503,
+                                detail="Analyst login could not be checked") from None
+
+    def get_demo(request: Request) -> DemoStreamer:
+        demo = request.app.state.demo
+        if demo is None:
+            raise HTTPException(status_code=503, detail="The demo stream is not available "
+                                "(it needs transaction storage and the demo rows file)")
+        return demo
 
     def save_in_background(request: Request, background: BackgroundTasks,
                            transactions: list, scores: list[Score], latency_ms: float) -> list:
@@ -271,6 +305,34 @@ def create_app(settings: Settings | None = None,
             latency_ms=_ms_since(start),
         )
 
+    @app.post("/demo/stream", status_code=202, response_model=DemoStreamStatus,
+              responses={401: {"description": "Missing or invalid analyst token"},
+                         409: {"description": "A demo stream is already running"},
+                         429: {"description": "Started too recently (see Retry-After)"},
+                         503: {"description": "Demo stream or storage unavailable"}})
+    async def start_demo_stream(body: DemoStreamRequest | None = Body(default=None),
+                                demo: DemoStreamer = Depends(get_demo),
+                                user_id: str = Depends(analyst_id)):
+        """Replay up to `max_rows` held-out test rows (~10/s) through the model and storage.
+
+        Analysts only. Returns at once; poll `GET /demo/stream` for progress.
+        """
+        try:
+            demo.start(user_id, body.limit if body else None)
+        except DemoBusy:
+            raise HTTPException(status_code=409, detail="A demo stream is already running") from None
+        except DemoRateLimited as exc:
+            raise HTTPException(status_code=429, detail=f"Try again later: {exc}",
+                                headers={"Retry-After": retry_after_header(exc.retry_after_s)},
+                                ) from None
+        return demo.status()
+
+    @app.get("/demo/stream", response_model=DemoStreamStatus,
+             responses={503: {"description": "Demo stream unavailable"}})
+    def demo_stream_status(demo: DemoStreamer = Depends(get_demo)):
+        """Progress of the current or most recent demo stream."""
+        return demo.status()
+
     @app.get("/metrics", response_model=MetricsResponse)
     def metrics(request: Request):
         """Request counts, latency percentiles, errors and risk levels since startup.
@@ -297,6 +359,37 @@ def _save(app: FastAPI, request_id: str, ids: list[str], transactions: list[dict
             "storage_error_code": getattr(exc, "code", None)})
     else:
         app.state.metrics.record_storage_write(ok=True, rows=len(ids))
+
+
+def _build_demo(app: FastAPI, settings: Settings) -> DemoStreamer | None:
+    """A demo streamer when storage is on and the demo rows file is present."""
+    if app.state.storage is None:
+        return None
+    if not settings.demo_rows_path.exists():
+        logger.warning("demo stream disabled: demo rows file not found",
+                       extra={"path": str(settings.demo_rows_path)})
+        return None
+    return DemoStreamer(load_demo_rows(settings.demo_rows_path),
+                        lambda row: _score_and_save_demo_row(app, row),
+                        rate_per_s=settings.demo_rate_per_s, max_rows=settings.demo_max_rows,
+                        cooldown_s=settings.demo_cooldown_s,
+                        max_per_hour=settings.demo_max_per_hour)
+
+
+def _score_and_save_demo_row(app: FastAPI, row: dict) -> None:
+    """One demo row: score, count it in /metrics like /predict traffic, save (may raise)."""
+    store: ModelStore = app.state.store
+    start = time.perf_counter()
+    score = score_frame(store, pd.DataFrame([row], columns=RAW_COLUMNS))[0]
+    latency_ms = _ms_since(start)
+    app.state.metrics.record_risk_levels([score.risk_level.value])
+    try:
+        app.state.storage.save([build_row(str(uuid.uuid4()), row, score, store.version,
+                                          latency_ms)])
+    except Exception:
+        app.state.metrics.record_storage_write(ok=False, rows=1)
+        raise
+    app.state.metrics.record_storage_write(ok=True, rows=1)
 
 
 def _endpoint(request: Request) -> str:

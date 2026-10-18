@@ -6,6 +6,8 @@ Two kinds of access, on purpose:
   trigger adds one for every MEDIUM/HIGH row in the same insert.
 - Reads use the anon key plus the *caller's* login token, so RLS decides what an
   analyst may see, exactly as it does for the dashboard.
+- `verify_user` asks Supabase Auth who a login token belongs to (POST /demo/stream
+  has no table read that would reject a bad token for us).
 
 Both talk to Supabase's REST API (PostgREST) directly; the full supabase client
 adds auth/session machinery the API doesn't need.
@@ -42,11 +44,14 @@ class TransactionStore(Protocol):
 
     def get(self, transaction_id: str, user_token: str) -> dict | None: ...
 
+    def verify_user(self, user_token: str) -> str: ...
+
 
 class SupabaseStore:
     def __init__(self, url: str, service_role_key: str, anon_key: str, timeout: float,
                  transport: httpx.BaseTransport | None = None):
         self._rest_url = f"{url.rstrip('/')}/rest/v1"
+        self._auth_url = f"{url.rstrip('/')}/auth/v1"
         self._anon_key = anon_key
         # One pooled HTTP client for every request; headers (and so the key) are
         # set per PostgREST client, which makes sharing it safe.
@@ -76,6 +81,22 @@ class SupabaseStore:
         except httpx.HTTPError as exc:  # network errors, timeouts
             raise StorageUnavailable(type(exc).__name__) from exc
         return result.data[0] if result.data else None
+
+    def verify_user(self, user_token: str) -> str:
+        """The id of the signed-in (non-anonymous) user behind `user_token`."""
+        headers = {"apikey": self._anon_key, "Authorization": f"Bearer {user_token}"}
+        try:
+            response = self._http.get(f"{self._auth_url}/user", headers=headers)
+        except httpx.HTTPError as exc:  # network errors, timeouts
+            raise StorageUnavailable(type(exc).__name__) from exc
+        if response.status_code in (401, 403):
+            raise InvalidToken("token rejected by Supabase Auth")
+        if response.status_code != 200:
+            raise StorageUnavailable(f"Supabase Auth HTTP {response.status_code}")
+        user = response.json()
+        if not user.get("id") or user.get("is_anonymous"):
+            raise InvalidToken("not a signed-in analyst")
+        return user["id"]
 
 
 def build_store(settings: Settings) -> SupabaseStore | None:
