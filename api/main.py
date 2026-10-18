@@ -18,6 +18,7 @@ from dataclasses import asdict
 from uuid import UUID
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -123,6 +124,16 @@ def create_app(settings: Settings | None = None,
                  else logging.WARNING if response.status_code >= 400 else logging.INFO)
         logger.log(level, "request", extra=fields, exc_info=exc_info)
         return response
+
+    # Added last so it wraps everything: preflights are answered here (not counted in
+    # /metrics) and error responses still carry CORS headers for the dashboard.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.cors_origins),
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        expose_headers=["X-Request-ID"],
+    )
 
     def get_store(request: Request) -> ModelStore:
         store = request.app.state.store
