@@ -1,4 +1,4 @@
-import { BarChart3, Cpu, FlaskConical, Images, Scale, Server, Sparkles } from 'lucide-react'
+import { BarChart3, Cpu, FlaskConical, Images, Scale, Server, Sparkles, Waves } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { CopyCommand } from '../components/CopyCommand'
 import { ConfusionMatrix } from '../components/model/ConfusionMatrix'
@@ -8,6 +8,7 @@ import { ModelComparison } from '../components/model/ModelComparison'
 import { SplitBar } from '../components/model/SplitBar'
 import { PageHeader } from '../components/PageHeader'
 import { EmptyState, ErrorState, Skeleton } from '../components/StateViews'
+import { DriftPanel } from '../components/system/DriftPanel'
 import { SystemPanel } from '../components/system/SystemPanel'
 import { useAsync } from '../hooks/useAsync'
 import { formatCurrencyWhole, formatDateTime } from '../lib/format'
@@ -65,7 +66,7 @@ export function ModelSystem() {
         description="How well the model performs on unseen data, and how the API is doing right now."
         actions={
           <nav aria-label="On this page" className="flex flex-wrap gap-2 text-sm">
-            {[['#model', 'Model'], ['#charts', 'Charts'], ['#system', 'System']].map(([href, text]) => (
+            {[['#model', 'Model'], ['#charts', 'Charts'], ['#drift', 'Drift'], ['#system', 'System']].map(([href, text]) => (
               <a key={href} href={href} className="rounded-xl border border-border bg-surface px-3 py-1.5 font-medium text-muted transition-colors hover:text-fg">{text}</a>
             ))}
           </nav>
@@ -86,6 +87,11 @@ export function ModelSystem() {
 
         <Section id="charts" icon={Images} title="Training charts" description="Generated in Phase 2 by the training pipeline. Click a chart to enlarge it.">
           <FigureGallery />
+        </Section>
+
+        <Section id="drift" icon={Waves} title="Score drift"
+          description="Are live fraud scores still distributed like the training scores? Checked with the Population Stability Index (PSI).">
+          <DriftPanel />
         </Section>
 
         <Section id="system" icon={Server} title="System health" description="Live from the API’s /health and /metrics endpoints.">

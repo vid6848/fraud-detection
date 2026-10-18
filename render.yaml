@@ -14,6 +14,7 @@ services:
         - ml/*.py
         - ml/artifacts/model.joblib
         - ml/artifacts/metadata.json
+        - ml/artifacts/score_distribution.json
         - Dockerfile
         - requirements-api.txt
     envVars:

@@ -145,6 +145,7 @@ docker run -p 8000:8000 --env-file .env fraud-api
 | GET | `/metrics` | Request counts, p50/p95/p99 latency, errors, risk-level counts, uptime |
 | POST | `/demo/stream` | Analysts only: replay up to 200 held-out test rows server-side at ~10/s (for the deployed demo) |
 | GET | `/demo/stream` | Progress of the current or last demo stream |
+| GET | `/drift` | Analysts only: PSI between the latest live scores and the training score distribution, with an OK / Watch / Alert label |
 
 A transaction is one row of `creditcard.csv` without `Class`: `Time`, `V1`–`V28`, `Amount` (all numbers; `Time` and `Amount` ≥ 0; unknown fields are rejected). The examples below use [`docs/examples/transaction.json`](docs/examples/transaction.json), a real fraud from the validation period.
 
@@ -321,6 +322,33 @@ Returns 202 at once; `GET /demo/stream` shows progress (`state`: `running`, `com
 
 Without storage configured it returns 503. The lock and limits are in memory, which is why the API runs as a single worker.
 
+**`GET /drift`** *(analysts only)*
+
+Is the model still seeing the kind of transactions it was trained on? The API reads the newest scores from Supabase **with the caller's login** (so Row Level Security applies), only from the model version it is serving, and compares their distribution with the training split's using the **Population Stability Index**:
+
+PSI = Σ over bins of (live% − training%) × ln(live% ÷ training%)
+
+```bash
+curl localhost:8000/drift -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+```json
+{"status": "OK", "psi": 0.052426, "live_rows": 300, "window": 1000, "min_rows": 500,
+ "thresholds": {"watch": 0.1, "alert": 0.25},
+ "bins": [{"lower": 0.0, "upper": 0.0005, "reference": 0.93295, "live": 0.87333, "contribution": 0.00395}, "..."],
+ "reference": {"rows": 199364, "source": "training split (199,364 rows) scored by the deployed model", "...": "..."}}
+```
+*(This example was run with `DRIFT_MIN_ROWS=100`; with the default of 500, 300 rows give `"Not enough data"`.)*
+
+| Decision | Choice | Why |
+|---|---|---|
+| Labels | PSI < 0.1 **OK**, 0.1–0.25 **Watch**, ≥ 0.25 **Alert** | The usual rule of thumb |
+| Bins | < 0.05%, 0.05–0.1%, 0.1–0.5%, 0.5–5% (all LOW), 5–42.9% (MEDIUM), ≥ 42.9% (HIGH) | The calibrated score is step-like (93% of training scores are under 0.05%), so quantile bins would collapse; these follow the risk bands |
+| Window | The latest 1,000 live scores; under 500 gives **Not enough data** | Small windows are noisy. Replaying the held-out test period (no real drift) in 1,000-row windows never reached Alert and reached Watch 4.8% of the time; 200-row windows did 2% and 11% |
+| Reference | The training split scored by the deployed model, saved by `python scripts/make_score_distribution.py` to [`ml/artifacts/score_distribution.json`](ml/artifacts/score_distribution.json) | In-sample, but calibration keeps it close to held-out scores (PSI training → validation 0.02). The API ignores a reference made for another model version (re-run the script after retraining) |
+| Empty bins | Counted as 0.01% instead of 0 | Keeps ln(·) finite |
+
+Settings: `DRIFT_WINDOW` (1000), `DRIFT_MIN_ROWS` (500), `SCORE_DISTRIBUTION_PATH`. Returns 503 without storage or without a matching reference. The dashboard shows it on the Model & System page (**Score drift**): the PSI, its label, and each band's share of training vs live scores and of the PSI.
+
 ### Errors
 
 Every error has the same shape, and `request_id` matches the `X-Request-ID` response header and the server log line:
@@ -336,7 +364,7 @@ Every error has the same shape, and `request_id` matches the `X-Request-ID` resp
 | Status | `code` | When |
 |---|---|---|
 | 422 | `validation_error` | Missing/extra field, wrong type, negative amount, NaN, malformed JSON, batch empty or over 1,000. `details` names each bad field but never echoes the submitted values. |
-| 401 | `unauthorized` | `GET /explain/{id}` or `POST /demo/stream` without a valid analyst token |
+| 401 | `unauthorized` | `GET /explain/{id}`, `GET /drift` or `POST /demo/stream` without a valid analyst token |
 | 404 | `not_found` | Unknown path, or a stored transaction that doesn't exist |
 | 405 | `method_not_allowed` | e.g. `GET /predict` |
 | 409 | `conflict` | `POST /demo/stream` while a demo stream is running |
@@ -582,7 +610,7 @@ It deletes every row in `transactions`, and their alerts and feedback go with th
 | `/login` | Email + password sign-in for analysts (public sign-up is off) |
 | `/app` | **Live feed.** The newest 200 scored transactions, arriving in real time. KPIs: transactions per minute, % flagged, open alerts, average latency. Pause / resume. **Start demo stream** replays 200 held-out test transactions through the API (about 20 s) with a progress bar |
 | `/app/alerts` | **Alert queue.** Open alerts, High first then newest, filterable by severity and status. Click one for its details, the SHAP explanation from the API, and **Confirm fraud** / **False alarm** with an optional note |
-| `/app/model` | **Model & system.** Test metrics with 95% confidence intervals, confusion matrix, model comparison, the Phase 2 charts, and live API health (polled every 5 s): uptime, errors, p50/p95 latency over time |
+| `/app/model` | **Model & system.** Test metrics with 95% confidence intervals, confusion matrix, model comparison, the Phase 2 charts, **score drift** (PSI vs training, OK / Watch / Alert), and live API health (polled every 5 s): uptime, errors, p50/p95 latency over time |
 
 **When the API is asleep.** The deployed API runs on Render's free plan, which sleeps after 15 minutes without traffic and takes about a minute to wake. The dashboard pings `/health` as soon as the page loads, so the API starts waking while you log in. If `/health` is slow (over 3 s) or failing, every dashboard page shows *"API is waking up (free tier, ~1 min)"* with a timer and keeps retrying; after 2 minutes it switches to *"Can't reach the API"* with a Retry button. The live feed and alerts keep working meanwhile, because they come straight from Supabase. Against a local API there is no cold start, so a failure shows as "Can't reach the API" at once.
 

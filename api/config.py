@@ -27,6 +27,12 @@ DEFAULT_DEMO_RATE_PER_S = 10.0
 DEFAULT_DEMO_MAX_ROWS = 200
 DEFAULT_DEMO_COOLDOWN_S = 60.0  # per analyst
 DEFAULT_DEMO_MAX_PER_HOUR = 12  # all analysts together
+# GET /drift: the latest live scores vs the training score distribution.
+DEFAULT_SCORE_DISTRIBUTION_PATH = "ml/artifacts/score_distribution.json"
+# 1,000 rows: replaying the (undrifted) test period in 1,000-row windows never reached
+# "Alert" and reached "Watch" 4.8% of the time; 200-row windows did 11% / 2%.
+DEFAULT_DRIFT_WINDOW = 1000
+DEFAULT_DRIFT_MIN_ROWS = 500
 
 
 @dataclass(frozen=True)
@@ -48,6 +54,10 @@ class Settings:
     demo_max_rows: int = DEFAULT_DEMO_MAX_ROWS
     demo_cooldown_s: float = DEFAULT_DEMO_COOLDOWN_S
     demo_max_per_hour: int = DEFAULT_DEMO_MAX_PER_HOUR
+    score_distribution_path: Path = field(
+        default_factory=lambda: _resolve(DEFAULT_SCORE_DISTRIBUTION_PATH))
+    drift_window: int = DEFAULT_DRIFT_WINDOW
+    drift_min_rows: int = DEFAULT_DRIFT_MIN_ROWS
 
     @property
     def storage_configured(self) -> bool:
@@ -74,6 +84,10 @@ class Settings:
             demo_max_rows=int(os.getenv("DEMO_MAX_ROWS", DEFAULT_DEMO_MAX_ROWS)),
             demo_cooldown_s=float(os.getenv("DEMO_COOLDOWN_S", DEFAULT_DEMO_COOLDOWN_S)),
             demo_max_per_hour=int(os.getenv("DEMO_MAX_PER_HOUR", DEFAULT_DEMO_MAX_PER_HOUR)),
+            score_distribution_path=_resolve(os.getenv("SCORE_DISTRIBUTION_PATH",
+                                                       DEFAULT_SCORE_DISTRIBUTION_PATH)),
+            drift_window=int(os.getenv("DRIFT_WINDOW", DEFAULT_DRIFT_WINDOW)),
+            drift_min_rows=int(os.getenv("DRIFT_MIN_ROWS", DEFAULT_DRIFT_MIN_ROWS)),
         )
 
 

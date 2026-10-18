@@ -42,6 +42,7 @@ def test_everything_the_dockerfile_copies_exists_and_is_not_dockerignored():
                for s in line.split()[:-1]]
     allowed = [line[1:] for line in (ROOT / ".dockerignore").read_text().splitlines()
                if line.startswith("!")]
+    assert "ml/artifacts/score_distribution.json" in sources  # GET /drift's reference
     for source in sources:
         assert list(ROOT.glob(source.rstrip("/"))), source
         assert source in allowed, f"{source} is excluded by .dockerignore"

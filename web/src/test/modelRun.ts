@@ -1,3 +1,4 @@
+import type { DriftReport } from '../lib/drift'
 /** A model_runs row shaped like the real one (values from ml/artifacts/metadata.json). */
 export const MODEL_RUN = {
   id: 1,
@@ -45,10 +46,32 @@ export const METRICS = {
 }
 
 /** fetch mock answering /health and /metrics. */
-export function systemFetch(health: unknown = HEALTH, metrics: unknown = METRICS) {
+/** GET /drift: 1,000 live scores, a little shifted towards higher scores. */
+export const DRIFT: DriftReport = {
+  status: 'Watch',
+  psi: 0.1395,
+  live_rows: 1000,
+  window: 1000,
+  min_rows: 500,
+  live_from: '2026-10-18T09:00:00+00:00',
+  live_to: '2026-10-18T10:00:00+00:00',
+  thresholds: { watch: 0.1, alert: 0.25 },
+  bins: [
+    { lower: 0, upper: 0.0005, reference: 0.93295, live: 0.82, contribution: 0.0145 },
+    { lower: 0.0005, upper: 0.001, reference: 0.05165, live: 0.12, contribution: 0.0577 },
+    { lower: 0.001, upper: 0.005, reference: 0.00971, live: 0.04, contribution: 0.0429 },
+    { lower: 0.005, upper: 0.05, reference: 0.00329, live: 0.012, contribution: 0.0113 },
+    { lower: 0.05, upper: 0.42857142857142855, reference: 0.00017, live: 0.004, contribution: 0.0121 },
+    { lower: 0.42857142857142855, upper: 1, reference: 0.00223, live: 0.004, contribution: 0.0010 },
+  ],
+  reference: { rows: 199364, source: 'training split (199,364 rows) scored by the deployed model', model_version: '1.0.0', created_at: '2026-10-18T10:10:37+00:00' },
+  model_version: '1.0.0',
+}
+
+export function systemFetch(health: unknown = HEALTH, metrics: unknown = METRICS, drift: unknown = DRIFT) {
   return (url: RequestInfo | URL) => {
     const u = String(url)
-    const body = u.endsWith('/health') ? health : u.endsWith('/metrics') ? metrics : null
+    const body = u.endsWith('/health') ? health : u.endsWith('/metrics') ? metrics : u.endsWith('/drift') ? drift : null
     return Promise.resolve(new Response(JSON.stringify(body), { status: body ? 200 : 404 }))
   }
 }

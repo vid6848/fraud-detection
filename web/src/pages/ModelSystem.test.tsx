@@ -18,6 +18,13 @@ describe('ModelSystem', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  it('has a score drift section with the PSI from the API', async () => {
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'Score drift' })).toBeInTheDocument()
+    expect(await screen.findByText('0.140')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Drift' })).toHaveAttribute('href', '#drift')
+  })
+
   it('shows the deployed model with test metrics and confidence intervals', async () => {
     renderPage()
     expect(await screen.findByText('Random Forest', { selector: 'p.text-xl' })).toBeInTheDocument()
@@ -45,7 +52,7 @@ describe('ModelSystem', () => {
     const rows = within(comparison).getAllByRole('listitem')
     expect(rows[0]).toHaveTextContent('Random Forest Deployed')
     expect(rows[0]).toHaveTextContent('0.880')
-    expect(screen.getByText(/199,364 rows/)).toBeInTheDocument()
+    expect(screen.getAllByText(/199,364 rows/).length).toBeGreaterThanOrEqual(1) // split bar (+ drift note)
     expect(screen.getByText('isotonic')).toBeInTheDocument()
   })
 
